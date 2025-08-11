@@ -1,26 +1,18 @@
 import React, { useMemo, useState, useEffect } from "react";
 
 /**
- * Player Name Generator — DI Colleges (A–Z) + Origin Modes + NFL Numbers + Age Control (Sport-specific)
+ * Player Name Generator — Origin‑aware Names (EU/SA), NA names for College
  *
- * New (this version):
- * - Age control next to Quantity:
- *    * Use Random Age (default ON)
- *    * Manual Age input; range depends on Sport/Game:
- *        - NBA 2K: 18–38
- *        - Madden: 20–40
- *    * Lock Age (one age for the whole batch, random or manual)
+ * What’s new:
+ * - Names now match the player's origin:
+ *    • If origin is a COUNTRY (Europe or South America): use country‑appropriate first/last name pools
+ *    • If origin is COLLEGE: use North American (US/Canada) names
+ * - Everything else remains the same (locks, archetypes, jersey rules, age ranges, etc.)
  *
- * Still included:
- * - Quantity default = 1
- * - Origin options: Random, Random College, Random Country, College, Country
- * - Countries: Europe + South America (USA excluded), sorted A–Z
- * - Colleges: alphabetized NCAA Division I list
- * - NFL jersey numbers by position (QB 0–19, RB 0–44, WR 0–19 or 80–89, etc.)
- * - Realistic height/weight by position (archetypes)
- * - No duplicate names across the save
- * - “Portraits” = colored initials avatar
- * - Copy + Clear buttons
+ * Notes:
+ * - Countries list = Europe + South America (USA excluded)
+ * - Colleges list = alphabetized D‑I (practical large list; update on request)
+ * - No “iconic one‑off” names included
  */
 
 type Sport = "madden" | "nba2k";
@@ -41,7 +33,7 @@ type PlayerRow = {
   collegeOrCountry: string;
 };
 
-const STORAGE_KEY = "sgnc_players_v11";
+const STORAGE_KEY = "sgnc_players_v12";
 
 /* ==============================
    Countries — Europe + South America (A–Z), USA excluded
@@ -124,6 +116,152 @@ const NCAA_ALL_DI_UNSORTED: string[] = [
 const NCAA_ALL_DI: string[] = [...NCAA_ALL_DI_UNSORTED].sort((a,b)=>a.localeCompare(b));
 
 /* ==============================
+   Name groups by language/region
+   We map each country -> a group, and each group has first/last pools.
+   ============================== */
+
+// North America (for COLLEGE origin: US/Canada vibe)
+const FIRST_NA = [
+  "James","Michael","Christopher","Matthew","Andrew","Daniel","Joseph","Ryan","Brandon","Tyler",
+  "Jacob","Ethan","Noah","Liam","Logan","Aiden","Elijah","Owen","Caleb","Jordan","Jason","Kevin",
+  "Jonathan","Anthony","Nathan","Evan","Cole","Dylan","Austin","Zachary","Shawn","Travis","Shane",
+  "Marcus","Justin","Bryce","Jaden","Devin","Isaiah","Xavier","Carter","Mason","Connor","Hunter",
+  "Colton","Gavin","Elliot","Nolan","Hayden","Parker"
+];
+const LAST_NA = [
+  "Smith","Johnson","Williams","Brown","Jones","Garcia","Miller","Davis","Rodriguez","Martinez",
+  "Hernandez","Lopez","Gonzalez","Wilson","Anderson","Thomas","Taylor","Moore","Jackson","Martin",
+  "Lee","Perez","Thompson","White","Harris","Sanchez","Clark","Ramirez","Lewis","Robinson",
+  "Walker","Young","Allen","King","Wright","Scott","Torres","Nguyen","Hill","Flores",
+  "Green","Adams","Nelson","Baker","Hall","Rivera","Campbell","Mitchell","Carter","Roberts",
+  "Bouchard","Lambert","Gagnon","Tremblay","Roy","Lefebvre","Moreau","Fortin","Gauthier","Morin" // add some common Canadian surnames
+];
+
+// Language/region pools (kept reasonably sized; tell me if you want larger lists)
+const NAME_GROUPS: Record<string, {first: string[]; last: string[]}> = {
+  spanish: {
+    first: ["Alejandro","Carlos","Diego","Eduardo","Fernando","Ignacio","Javier","Luis","Manuel","Miguel","Pablo","Sergio","Álvaro","Hugo","Nicolás","Tomás","Matías","Joaquín","Andrés","Gabriel"],
+    last:  ["García","Fernández","González","Rodríguez","López","Martínez","Sánchez","Pérez","Gómez","Díaz","Silva","Reyes","Rojas","Castro","Méndez","Vargas","Romero","Navarro","Ibarra","Arias"]
+  },
+  portuguese: {
+    first: ["Bruno","Carlos","Daniel","Eduardo","Felipe","Gustavo","Henrique","João","Lucas","Marcos","Mateus","Paulo","Rafael","Thiago","Vitor","Leonardo","Pedro","Caio","André","Diego"],
+    last:  ["Silva","Santos","Oliveira","Souza","Rodrigues","Fernandes","Almeida","Gomes","Costa","Ribeiro","Carvalho","Pereira","Araujo","Barbosa","Melo","Castro","Cardoso","Teixeira","Lima","Moreira"]
+  },
+  french: {
+    first: ["Antoine","Baptiste","Clément","Damien","Emile","Étienne","Hugo","Julien","Lucas","Mathis","Noé","Quentin","Raphaël","Théo","Tristan","Yann","Adrien","Louis","Maxime","Nicolas"],
+    last:  ["Dupont","Durand","Moreau","Lefèvre","Fournier","Lambert","Rousseau","Vincent","Muller","Faure","Mercier","Blanc","Garnier","Chevalier","Francois","Boyer","Gauthier","Perrin","Renard","Fontaine"]
+  },
+  german: {
+    first: ["Lukas","Finn","Jonas","Leon","Niklas","Tobias","Felix","Tim","Johannes","Maximilian","Paul","David","Simon","Jan","Moritz","Noah","Ben","Philipp","Matthias","Stefan"],
+    last:  ["Müller","Schmidt","Schneider","Fischer","Weber","Meyer","Wagner","Becker","Hoffmann","Schäfer","Koch","Bauer","Richter","Klein","Wolf","Neumann","Schwarz","Zimmermann","Braun","Krüger"]
+  },
+  italian: {
+    first: ["Alessandro","Andrea","Antonio","Davide","Fabio","Francesco","Gabriele","Lorenzo","Luca","Marco","Matteo","Michele","Nicola","Paolo","Pietro","Riccardo","Simone","Tommaso","Stefano","Roberto"],
+    last:  ["Rossi","Russo","Ferrari","Esposito","Bianchi","Romano","Gallo","Costa","Fontana","Moretti","Conti","De Luca","Lombardi","Barbieri","Giordano","Mancini","Colombo","Ricci","Marino","Greco"]
+  },
+  dutch: {
+    first: ["Daan","Sem","Luuk","Jesse","Lars","Thijs","Bram","Timo","Niels","Koen","Ruben","Sven","Jasper","Guus","Jens","Milan","Sam","Max","Tom","Nick"],
+    last:  ["de Jong","Jansen","de Vries","van den Berg","van Dijk","Bakker","Visser","Smit","Meijer","de Boer","Mulder","Bos","Peters","Hendriks","van Leeuwen","van der Meer","Vos","Kok","Willems","van Dam"]
+  },
+  nordic: { // Norway, Sweden, Denmark, Iceland
+    first: ["Anders","Erik","Lars","Karl","Henrik","Jonas","Magnus","Nils","Oskar","Per","Sven","Tobias","Viktor","Mikael","Johan","Emil","Filip","Mats","Rasmus","Elias"],
+    last:  ["Johansson","Andersen","Hansen","Larsen","Olsen","Nielsen","Eriksson","Berg","Lund","Håkansson","Svensson","Iversen","Dahl","Pedersen","Gustafsson","Jakobsen","Halvorsen","Magnussen","Hagen","Kristensen"]
+  },
+  finnish_estonian: {
+    first: ["Mikko","Jari","Juho","Antti","Sami","Eero","Petri","Ville","Timo","Joonas","Risto","Ari","Heikki","Kalle","Aleksi","Marko","Jari","Arto","Taneli","Tuomas"],
+    last:  ["Korhonen","Virtanen","Mäkinen","Nieminen","Mäkelä","Hämäläinen","Laine","Heikkinen","Kinnunen","Salonen","Oja","Tamm","Saar","Kask","Pärn","Mets","Kalda","Toom","Sild","Vaher"]
+  },
+  polish_czech_slovak: {
+    first: ["Jakub","Jan","Adam","Tomasz","Mateusz","Marek","Petr","Lukáš","Ondřej","Miroslav","Jiri","Kamil","Patryk","Filip","Dominik","Radek","Viktor","Daniel","Pavel","Martin"],
+    last:  ["Nowak","Kowalski","Wiśniewski","Novák","Svoboda","Dvořák","Zieliński","Szymański","Mazur","Kaczmarek","Kučera","Procházka","Polák","Kopecký","Urban","Král","Jelínek","Krupa","Růžička","Malý"]
+  },
+  balkans_south_slavic: { // Serbia, Croatia, Bosnia, Slovenia, N. Macedonia, Montenegro
+    first: ["Marko","Nikola","Milan","Luka","Stefan","Petar","Aleksandar","Nemanja","Milos","Vladimir","Dario","Ante","Ivan","Josip","Matej","Tomislav","Zoran","Goran","Dragan","Bojan"],
+    last:  ["Jovanović","Petrović","Nikolić","Kovačević","Ilić","Marković","Stojanović","Knežević","Bogdanović","Radojević","Kovačić","Horvat","Kralj","Koren","Radić","Matić","Vuković","Milinković","Vrbanac","Barišić"]
+  },
+  greek: {
+    first: ["Giorgos","Kostas","Dimitris","Nikolas","Vasilis","Petros","Andreas","Christos","Stavros","Theodoros","Ioannis","Manolis","Alexandros","Panagiotis","Antonis","Spyros","Lefteris","Marios","Sotiris","Lazaros"],
+    last:  ["Papadopoulos","Papadakis","Nikolaou","Georgiou","Vasileiou","Papanikolaou","Christodoulou","Economou","Karagiannis","Kostopoulos","Giannopoulos","Athanasios","Spanos","Manolis","Kouris","Kyriazis","Makris","Tselios","Lazaridis","Antoniou"]
+  },
+  turkish: {
+    first: ["Ahmet","Mehmet","Mustafa","Ali","Hüseyin","Hasan","İbrahim","Yusuf","Emre","Murat","Kemal","Furkan","Berk","Oğuz","Can","Arda","Serkan","Onur","Tolga","Burak"],
+    last:  ["Yılmaz","Kaya","Demir","Şahin","Çelik","Yıldız","Yıldırım","Öztürk","Aydın","Arslan","Doğan","Kılıç","Aslan","Kurt","Koç","Erdoğan","Aksoy","Polat","Avcı","Sezer"]
+  },
+  romanian_moldovan: {
+    first: ["Andrei","Mihai","Alexandru","Gabriel","Ionut","Florin","Cristian","Stefan","Bogdan","Daniel","Vlad","Sorin","Radu","Marian","Razvan","Dragos","Dorin","Catalin","Danut","Ionel"],
+    last:  ["Popa","Ionescu","Popescu","Dumitru","Stan","Gheorghe","Stoica","Radu","Munteanu","Dobre","Marin","Tudor","Barbu","Ilie","Neagu","Florea","Nicolae","Serban","Nistor","Lupu"]
+  },
+  hungarian: {
+    first: ["Bence","Dániel","Gergő","Máté","Tamás","Zoltán","László","István","Péter","Gábor","Balázs","Attila","Csaba","Kristóf","András","Levente","Ádám","Barnabás","Marcell","Bálint"],
+    last:  ["Nagy","Kovács","Tóth","Szabó","Horváth","Varga","Kiss","Molnár","Németh","Farkas","Balogh","Papp","Takács","Juhász","Mészáros","Gulyás","Orosz","Fekete","Simon","Vass"]
+  },
+  albanian: {
+    first: ["Ardit","Erion","Kujtim","Besnik","Gentian","Arben","Elton","Granit","Ilir","Valon","Edon","Dritan","Luan","Blerim","Flamur","Altin","Bujar","Shkëlzen","Fatos","Kreshnik"],
+    last:  ["Hoxha","Dervishi","Krasniqi","Berisha","Gashi","Shala","Basha","Rama","Bytyqi","Thaçi","Mustafa","Lika","Gashi","Dema","Bajrami","Selmani","Ismaili","Halimi","Zeqiri","Gashi"]
+  },
+  armenian: {
+    first: ["Arman","Gevorg","Hayk","Tigran","Vardan","Ara","Levon","Artur","Gor","Stepan","Karen","Narek","Aram","Suren","Samvel","Hrach","Ashot","Edgar","Vahe","David"],
+    last:  ["Petrosyan","Grigoryan","Harutyunyan","Karapetyan","Sargsyan","Hovhannisyan","Vardanyan","Avetisyan","Hakobyan","Ghazaryan","Baghdasaryan","Manukyan","Stepanyan","Mkrtchyan","Yeritsyan","Babayan","Musheghyan","Khachatryan","Tadevosyan","Davtyan"]
+  },
+  georgian: {
+    first: ["Giorgi","Irakli","Levan","Mikheil","Davit","Zurab","Tornike","Nika","Besik","Vakhtang","Temur","Aleksandre","Otar","Kakha","Shota","Avto","Sandro","Beka","Aleko","Lasha"],
+    last:  ["Beridze","Giorgadze","Lomidze","Kharazishvili","Chkheidze","Gelashvili","Kiknadze","Tsiklauri","Japaridze","Khutsishvili","Abashidze","Mchedlidze","Arveladze","Kobakhidze","Okropiridze","Papashvili","Khvedelidze","Janelidze","Nadiradze","Tsereteli"]
+  },
+  azerbaijani: {
+    first: ["Ali","Murad","Kanan","Rashad","Nijat","Ilgar","Samir","Emin","Orkhan","Rauf","Javid","Kamran","Fikret","Elvin","Anar","Tural","Elshan","Vusal","Araz","Yusif"],
+    last:  ["Aliyev","Mammadov","Huseynov","Hasanov","Ibrahimov","Guliyev","Ismayilov","Rzayev","Rahimov","Farzaliyev","Mustafayev","Taghiyev","Karimov","Abdullayev","Valiyev","Mammadli","Azizov","Salmanov","Safarov","Babayev"]
+  },
+  ukrainian_belarusian: {
+    first: ["Andriy","Oleksandr","Dmytro","Serhii","Yurii","Vladyslav","Ihor","Taras","Denys","Mykola","Pavlo","Artem","Maksym","Bohdan","Vitalii","Valentyn","Oleh","Roman","Timofii","Yevhen"],
+    last:  ["Shevchenko","Kovalenko","Bondarenko","Tkachenko","Melnyk","Polishchuk","Boyko","Kravchenko","Marchenko","Lysenko","Ivanenko","Kovalchuk","Hrytsenko","Mazur","Zinchenko","Kozak","Moroz","Sydorenko","Volkov","Tarasenko"]
+  },
+  baltic: { // Latvia, Lithuania
+    first: ["Marius","Mindaugas","Vytautas","Tomas","Dainius","Saulius","Rimantas","Edgaras","Arvydas","Giedrius","Janis","Arturs","Rihards","Miks","Rolands","Edgars","Kaspars","Kristaps","Mareks","Reinis"],
+    last:  ["Jankauskas","Kazlauskas","Stankevicius","Petrauskas","Bertulis","Balodis","Ozols","Liepa","Vilsons","Kalniņš","Berzins","Eglitis","Krastiņš","Mežs","Vilks","Lācītis","Zariņš","Sproģis","Ābols","Siliņš"]
+  },
+  portuguese_pt: { // Portugal specifically (shares with portuguese)
+    first: ["André","Bernardo","Diogo","Francisco","Gonçalo","João","Luís","Miguel","Pedro","Tiago"],
+    last:  ["Silva","Santos","Ferreira","Pereira","Oliveira","Rodrigues","Martins","Costa","Gonçalves","Lopes"]
+  },
+  english_uk_ie: {
+    first: ["Oliver","Jack","Harry","George","Charlie","Alfie","Oscar","James","Leo","Thomas","Jacob","William","Henry","Alexander","Freddie","Daniel","Finlay","Louis","Ethan","Max"],
+    last:  ["Smith","Jones","Taylor","Brown","Williams","Wilson","Johnson","Davies","Evans","Thomas","Roberts","Walker","Wright","Thompson","White","Edwards","Hughes","Green","Hall","Clark"]
+  },
+  greek_cypriot: undefined, // use greek
+  swiss_mix: { // Switzerland mixed FR/DE/IT
+    first: ["Luca","Leon","Noah","Marco","Matteo","Julien","Léon","Nico","Fabian","Tim","Joel","Raphael","Pascal","Nils","Daniel","Elias","Jan","Yannick","Robin","Sandro"],
+    last:  ["Müller","Meier","Schmid","Keller","Weber","Fischer","Gerber","Huber","Martin","Bernasconi","Rossi","Fontana","Morel","Dubois","Roy","Favre","Baumann","Kunz","Schneider","Bianchi"]
+  },
+  dutch_sur: { // Suriname (Dutch influence)
+    first: ["Ravi","Dinesh","Sunil","Kevin","Michael","Ricardo","Jamal","Imran","Ashwin","Jason","Rakesh","Farid","Rishi","Vikram","Andre","Diego","Stefan","Daniel","Dylan","Ryan"],
+    last:  ["Janssen","van Dijk","Bouterse","Essed","Gymnast","Pinas","Somai","Balwant","Khan","Baksh","Mohamed","Rachid","Fernandes","Gomes","Lopes","Sardjoe","Chin","Doekhi","Abdoel","Ramdien"]
+  },
+  guyana_en: { // Guyana English/Indo/Chinese/ Afro mix; keep generic English + Indian mix
+    first: ["Ravi","Ajay","Vishal","Imran","Akeem","Anthony","Shane","Andre","Deon","Michael","Jason","Dwayne","Kumar","Ryan","Troy","Devon","Kevin","Raj","Samuel","Trevor"],
+    last:  ["Persaud","Singh","Khan","Ali","Ramjohn","Chand","Mohamed","Lewis","Thomas","Williams","Francis","Henry","Adams","Grant","Peters","Roberts","Smith","Jordan","Hinds","Allen"]
+  }
+};
+
+// Map each country to a name group key
+const COUNTRY_TO_GROUP: Record<string, keyof typeof NAME_GROUPS | "greek" | "portuguese" | "spanish" | "english_uk_ie" | "dutch" | "nordic" | "finnish_estonian" | "polish_czech_slovak" | "balkans_south_slavic" | "turkish" | "romanian_moldovan" | "hungarian" | "albanian" | "armenian" | "georgian" | "azerbaijani" | "ukrainian_belarusian" | "baltic" | "portuguese_pt" | "swiss_mix" | "dutch_sur" | "guyana_en"> = {
+  // Europe
+  "Albania":"albanian","Andorra":"spanish","Armenia":"armenian","Austria":"german","Azerbaijan":"azerbaijani",
+  "Belarus":"ukrainian_belarusian","Belgium":"french","Bosnia and Herzegovina":"balkans_south_slavic","Bulgaria":"balkans_south_slavic",
+  "Croatia":"balkans_south_slavic","Cyprus":"greek","Czechia":"polish_czech_slovak","Denmark":"nordic","Estonia":"finnish_estonian",
+  "Finland":"finnish_estonian","France":"french","Georgia":"georgian","Germany":"german","Greece":"greek",
+  "Hungary":"hungarian","Iceland":"nordic","Ireland":"english_uk_ie","Italy":"italian","Kazakhstan":"ukrainian_belarusian",
+  "Kosovo":"albanian","Latvia":"baltic","Liechtenstein":"german","Lithuania":"baltic","Luxembourg":"french",
+  "Malta":"italian","Moldova":"romanian_moldovan","Monaco":"french","Montenegro":"balkans_south_slavic",
+  "Netherlands":"dutch","North Macedonia":"balkans_south_slavic","Norway":"nordic","Poland":"polish_czech_slovak",
+  "Portugal":"portuguese_pt","Romania":"romanian_moldovan","San Marino":"italian","Serbia":"balkans_south_slavic",
+  "Slovakia":"polish_czech_slovak","Slovenia":"balkans_south_slavic","Spain":"spanish","Sweden":"nordic",
+  "Switzerland":"swiss_mix","Turkey":"turkish","Ukraine":"ukrainian_belarusian","United Kingdom":"english_uk_ie","Vatican City":"italian",
+  // South America
+  "Argentina":"spanish","Bolivia":"spanish","Brazil":"portuguese","Chile":"spanish","Colombia":"spanish","Ecuador":"spanish",
+  "Guyana":"guyana_en","Paraguay":"spanish","Peru":"spanish","Suriname":"dutch_sur","Uruguay":"spanish","Venezuela":"spanish"
+};
+
+/* ==============================
    Jerseys: NFL position‑based
    ============================== */
 const NFL_POS = ["QB","RB","WR","TE","OL","DL","LB","CB","S","K","P"];
@@ -172,34 +310,23 @@ const NBA_ARCH: Record<string, Archetype[]> = {
 };
 
 /* ==============================
-   Names (iconic surnames removed)
+   Age helpers (sport‑specific ranges)
    ============================== */
-const firstNamesUS = [
-  "James","Michael","Christopher","Matthew","Andrew","Daniel","Joseph","Ryan","Brandon","Tyler",
-  "Jacob","Ethan","Noah","Liam","Mason","Logan","Aiden","Elijah","Oliver","Carter",
-  "Caleb","Jordan","Jason","Kevin","Jonathan","Anthony","Aaron","Nathan","Evan","Cole",
-  "Dylan","Austin","Zachary","Shawn","Travis","Shane","Marcus","Justin","Bryce","Jaden",
-  "Devin","Isaiah","Xavier","Jamal","Malik","Trey","Jayden","Miles","Jalen","Kyle"
-];
-const firstNamesIntl = [
-  "Niko","Jonas","Dario","Pau","Marco","Thiago","Mateo","Pedro","Enzo","Leo","Hugo","Jules","Noel",
-  "Anton","Roman","Milan","Emil","Maks","Ilya","Yuto","Daiki","Ren","Minho","Seojun","Arjun",
-  "Kabir","Omar","Youssef","Amir","Ade","Tariq","Kwame","Soren","Magnus","Bjorn","Filip","Andrei",
-  "Viktor","Tomas"
-];
-const lastNamesCommon = [
-  "Smith","Johnson","Williams","Brown","Jones","Garcia","Miller","Davis","Rodriguez","Martinez",
-  "Hernandez","Lopez","Gonzalez","Wilson","Anderson","Thomas","Taylor","Moore","Jackson","Martin",
-  "Lee","Perez","Thompson","White","Harris","Sanchez","Clark","Ramirez","Lewis","Robinson",
-  "Walker","Young","Allen","King","Wright","Scott","Torres","Nguyen","Hill","Flores",
-  "Green","Adams","Nelson","Baker","Hall","Rivera","Campbell","Mitchell","Carter","Roberts"
-];
-const lastNamesIntl = [
-  "Fernandez","Alvarez","Silva","Costa","Rossi","Moretti","Bianchi","Dubois","Lefevre","Kovacs",
-  "Novak","Horvat","Popov","Ivanov","Vasilev","Kumar","Singh","Gupta","Hassan","Aziz","Amin","Ali",
-  "Haddad","Yamamoto","Tanaka","Kim","Park","Choi","Santos","Reyes","Ibrahim","Mensah","Boateng",
-  "Lund","Hansen","Petrov","Markovic","Iliev","Kowalski","Nowak"
-];
+function ageBoundsForSport(sp: Sport): {min:number; max:number} {
+  return sp === "nba2k" ? { min: 18, max: 38 } : { min: 20, max: 40 };
+}
+function randomAgeForSport(sp: Sport, r: () => number): number {
+  const { min, max } = ageBoundsForSport(sp);
+  const roll = r();
+  const target = roll < 0.7 ? Math.round(min + (Math.min(min + 5, max) - min) * r()) : Math.round(min + (max - min) * r());
+  return Math.max(min, Math.min(max, target));
+}
+
+/* ==============================
+   Generic / fallback name pools (if a mapping is missing)
+   ============================== */
+const FIRST_INTL_GENERIC = ["Niko","Jonas","Dario","Marco","Thiago","Mateo","Pedro","Enzo","Leo","Hugo","Anton","Roman","Milan","Emil","Ilya","Omar","Youssef","Soren","Magnus","Filip"];
+const LAST_INTL_GENERIC  = ["Fernandez","Alvarez","Silva","Costa","Rossi","Bianchi","Dubois","Lefevre","Kovacs","Novak","Horvat","Popov","Ivanov","Vasilev","Kumar","Hassan","Aziz","Lund","Hansen","Petrov"];
 
 /* ==============================
    Utils
@@ -235,20 +362,6 @@ function pickFromRanges(ranges: Array<[number, number]>, r: () => number) {
 }
 
 /* ==============================
-   Age helpers (sport‑specific ranges)
-   ============================== */
-function ageBoundsForSport(sp: Sport): {min:number; max:number} {
-  return sp === "nba2k" ? { min: 18, max: 38 } : { min: 20, max: 40 };
-}
-function randomAgeForSport(sp: Sport, r: () => number): number {
-  const { min, max } = ageBoundsForSport(sp);
-  // Skew a bit younger but allow full range
-  const roll = r();
-  const target = roll < 0.7 ? randRange(min, Math.min(min + 5, max), r) : randRange(min, max, r);
-  return clamp(target, min, max);
-}
-
-/* ==============================
    Component
    ============================== */
 export default function PlayerNameGenerator() {
@@ -261,13 +374,13 @@ export default function PlayerNameGenerator() {
 
   const [quantity, setQuantity] = useState<number>(1); // default = 1
 
-  // Age controls (sport-specific ranges)
-  const [useRandomAge, setUseRandomAge] = useState<boolean>(true); // default ON
+  // Age controls (sport-specific)
+  const [useRandomAge, setUseRandomAge] = useState<boolean>(true);
   const { min: ageMinCurrent, max: ageMaxCurrent } = ageBoundsForSport(sport);
   const [manualAge, setManualAge] = useState<number>(Math.round((ageMinCurrent + ageMaxCurrent) / 2));
   const [lockAge, setLockAge] = useState<boolean>(false);
 
-  const [manualNumber, setManualNumber] = useState<string>(""); // blank = Random
+  const [manualNumber, setManualNumber] = useState<string>("");
   const [lockNumber, setLockNumber] = useState(false);
 
   type OriginMode = "random" | "random_college" | "random_country" | "college" | "country";
@@ -305,23 +418,30 @@ export default function PlayerNameGenerator() {
   }, [seed, sport, position, quantity, useRandomSize, manualNumber, originMode, manualCollege, manualCountry,
       lockSport, lockPosition, lockNumber, lockOrigin, lockSize, useRandomAge, manualAge, lockAge]);
 
-  // Names (NBA mixes in more intl)
-  function poolFirst(): string[] {
-    const base = [...firstNamesUS];
-    if (sport === "nba2k") base.push(...firstNamesIntl);
-    return base;
+  // Position lists
+  const positionChoices = sport === "madden" ? NFL_POS : NBA_POS;
+
+  /* ====== Origin-aware name picking ====== */
+  function namePoolForOrigin(origin: {type: "college"|"country"; value: string}): {first: string[]; last: string[]} {
+    if (origin.type === "college") {
+      return { first: FIRST_NA, last: LAST_NA };
+    }
+    const country = origin.value;
+    const groupKey = COUNTRY_TO_GROUP[country];
+    const group = groupKey ? NAME_GROUPS[groupKey] : undefined;
+    if (group && group.first.length && group.last.length) return group;
+    // Fallback (should be rare)
+    return { first: FIRST_INTL_GENERIC, last: LAST_INTL_GENERIC };
   }
-  function poolLast(): string[] {
-    const base = [...lastNamesCommon];
-    if (sport === "nba2k") base.push(...lastNamesIntl);
-    return base;
-  }
-  function makeName(r: () => number) {
-    const first = pick(poolFirst(), r);
-    const last = pick(poolLast(), r);
+
+  function makeName(r: () => number, origin: {type: "college"|"country"; value: string}) {
+    const pool = namePoolForOrigin(origin);
+    const first = pick(pool.first, r);
+    const last = pick(pool.last, r);
     return toTitleCase(`${first} ${last}`);
   }
 
+  /* ====== Attribute helpers ====== */
   function chooseArchetype(sp: Sport, pos: string, r: () => number): { label: string; h: number; w: number } {
     const table = sp === "madden" ? NFL_ARCH : NBA_ARCH;
     const list = (table as any)[pos] || (Object.values(table)[0] as Archetype[]);
@@ -330,11 +450,7 @@ export default function PlayerNameGenerator() {
     const w = Math.round(clamp(randRange(a.wMin, a.wMax, r), a.wMin - 10, a.wMax + 10));
     return { label: a.label, h, w };
   }
-
   function randomHand(r: () => number): Hand { return r() < 0.85 ? "Right" : "Left"; }
-
-  // Pos lists
-  const positionChoices = sport === "madden" ? NFL_POS : NBA_POS;
 
   function allowedNFLNumberForPos(pos: string, r: () => number) {
     const ranges = NFL_NUMBER_RANGES[pos] || [[0,99]];
@@ -421,17 +537,17 @@ export default function PlayerNameGenerator() {
     const batchAge = lockAge ? resolveAge(r, batchSport) : undefined;
 
     let attempts = 0;
-    while (out.length < quantity && attempts < quantity * 300) {
+    while (out.length < quantity && attempts < quantity * 400) {
       attempts++;
       const sp = batchSport;
       const pos = batchPos ?? resolvePosition(r, sp);
 
-      const name = makeName(r);
+      const origin = batchOrigin ?? resolveOrigin(r);
+      const name = makeName(r, origin);
       const key = name.toLowerCase();
       if (globalSet.has(key) || batchSet.has(key)) continue;
 
       const size = batchSizeSeed ?? resolveSize(r, sp, pos);
-      const origin = batchOrigin ?? resolveOrigin(r);
       const number = resolveNumber(r, sp, pos);
       const age = batchAge ?? resolveAge(r, sp);
 
@@ -534,14 +650,7 @@ export default function PlayerNameGenerator() {
           {/* Quantity */}
           <div className="space-y-2">
             <label className="block text-sm font-medium">Quantity</label>
-            <input
-              type="number"
-              min={1}
-              max={200}
-              className="w-28 border rounded px-2 py-2 bg-gray-900"
-              value={quantity}
-              onChange={e=>setQuantity(Math.max(1, Math.min(200, Number(e.target.value)||1)))}
-            />
+            <input type="number" min={1} max={200} className="w-28 border rounded px-2 py-2 bg-gray-900" value={quantity} onChange={e=>setQuantity(Math.max(1, Math.min(200, Number(e.target.value)||1)))} />
           </div>
 
           {/* Age (sport-specific) */}
@@ -550,12 +659,7 @@ export default function PlayerNameGenerator() {
               Age (NBA 18–38, Madden 20–40) {lockBadge(lockAge)}
             </label>
             <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={useRandomAge}
-                onChange={e=>setUseRandomAge(e.target.checked)}
-                disabled={lockAge}
-              />
+              <input type="checkbox" checked={useRandomAge} onChange={e=>setUseRandomAge(e.target.checked)} disabled={lockAge}/>
               Use Random Age
             </label>
             {!useRandomAge && (
@@ -596,13 +700,7 @@ export default function PlayerNameGenerator() {
               Jersey Number (blank = Random) {lockBadge(lockNumber)}
             </label>
             <div className="flex items-center gap-2">
-              <input
-                className="w-full border rounded px-2 py-2 bg-gray-900"
-                placeholder={sport==="nba2k"?"0–99":"varies by NFL position"}
-                value={manualNumber}
-                onChange={e=>setManualNumber(e.target.value)}
-                disabled={lockNumber && manualNumber.trim()!==""}
-              />
+              <input className="w-full border rounded px-2 py-2 bg-gray-900" placeholder={sport==="nba2k"?"0–99":"varies by NFL position"} value={manualNumber} onChange={e=>setManualNumber(e.target.value)} disabled={lockNumber && manualNumber.trim()!==""}/>
               <label className="text-xs flex items-center gap-1">
                 <input type="checkbox" checked={lockNumber} onChange={e=>setLockNumber(e.target.checked)} /> Lock
               </label>
