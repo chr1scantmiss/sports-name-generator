@@ -2,9 +2,12 @@ import React, { useMemo, useState, useEffect } from "react";
 
 /**
  * Player Name Generator — Draft Class Mode + Rookie Ages + Realistic NFL Position Mix
- * + PATCHES:
- *   1) "Clear before generate" toggle
- *   2) Position breakdown badge for the last generated batch
+ * Patches:
+ * - Clear before generate toggle
+ * - Position breakdown for last batch
+ * Update:
+ * - NFL draft class positions now fluctuate slightly each batch (±3/±4),
+ *   RB slightly more common than TE, Kickers/Punters never exceed caps.
  */
 
 type Sport = "madden" | "nba2k";
@@ -25,7 +28,7 @@ type PlayerRow = {
   collegeOrCountry: string;
 };
 
-const STORAGE_KEY = "sgnc_players_v14";
+const STORAGE_KEY = "sgnc_players_v15";
 
 /* ==============================
    Countries — Europe + South America (A–Z), USA excluded
@@ -107,7 +110,7 @@ const NCAA_ALL_DI_UNSORTED: string[] = [
 const NCAA_ALL_DI: string[] = [...NCAA_ALL_DI_UNSORTED].sort((a,b)=>a.localeCompare(b));
 
 /* ==============================
-   Name groups (College → NA; Country → mapped EU/SA pools)
+   Name pools
    ============================== */
 
 // North America (for COLLEGE origin)
@@ -370,7 +373,7 @@ export default function PlayerNameGenerator() {
 
   const [quantity, setQuantity] = useState<number>(1); // default = 1
   const [draftClass, setDraftClass] = useState<boolean>(false); // Complete Draft Class
-  const [clearBefore, setClearBefore] = useState<boolean>(false); // PATCH 1
+  const [clearBefore, setClearBefore] = useState<boolean>(false); // patch
 
   // Age controls
   const [useRandomAge, setUseRandomAge] = useState<boolean>(true);
@@ -383,7 +386,7 @@ export default function PlayerNameGenerator() {
 
   type OriginMode = "random" | "random_college" | "random_country" | "college" | "country";
   const [originMode, setOriginMode] = useState<OriginMode>("random");
-  const [manualCollege, setManualCollege] = useState<string>(NCAA_ALL_DI[0] || "Abilene Christian");
+  const [manualCollege, setManualCollege] = useState<string>("Abilene Christian");
   const [manualCountry, setManualCountry] = useState<string>(COUNTRIES_EU_SA[0]);
   const [lockOrigin, setLockOrigin] = useState(false);
 
@@ -403,7 +406,7 @@ export default function PlayerNameGenerator() {
   });
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(rows)); }, [rows]);
 
-  // PATCH 2: last batch breakdown
+  // Last batch breakdown
   const [lastBatch, setLastBatch] = useState<{ total: number; counts: Record<string, number> } | null>(null);
 
   // Keep manualAge within current sport bounds when sport changes
@@ -518,15 +521,95 @@ export default function PlayerNameGenerator() {
     return position || pick(sp === "madden" ? NFL_POS : NBA_POS, r);
   }
 
-  /* ====== Draft class builders ====== */
+  /* ==============================
+   NFL/NBA draft position builders
+   ============================== */
+
+  // Helper to get a small random swing (±3 mostly, sometimes ±4)
+  function smallSwing(r: () => number) {
+    const base = Math.floor(r() * 7) - 3; // -3..+3
+    // 20% chance to bump magnitude by 1 (to allow the occasional ±4)
+    if (Math.random() < 0.2) {
+      return base > 0 ? base + 1 : base < 0 ? base - 1 : (r() < 0.5 ? 1 : -1);
+    }
+    return base;
+  }
+
+  function clampBetween(n: number, lo: number, hi: number) {
+    return Math.max(lo, Math.min(hi, n));
+  }
+
   function nflDraftPositions(): string[] {
-    // Total 224: OL50, DL44, WR32, CB26, S15, LB20, TE12, QB6, RB11, K5, P3
-    const counts: Record<string, number> = {
-      OL: 50, DL: 44, WR: 32, CB: 26, S: 15, LB: 20, TE: 12, QB: 6, RB: 11, K: 5, P: 3
+    // Base pillar distribution (sum 224).
+    // Tweaked so RB is slightly more common than TE by default (RB12, TE11).
+    const base: Record<string, number> = {
+      OL: 50, DL: 44, WR: 32, CB: 26, S: 15, LB: 20, TE: 11, QB: 6, RB: 12, K: 5, P: 3
     };
+
+    // Start with base and apply small swings to adjustable positions (not K/P).
+    const adjustable = ["OL","DL","WR","CB","S","LB","TE","QB","RB"] as const;
+    const counts: Record<string, number> = { ...base };
+
+    for (const pos of adjustable) {
+      const swing = smallSwing(Math.random);
+      // Set gentle min/max per role to avoid wild shapes
+      const caps: Record<string, [number, number]> = {
+        OL: [44, 56],
+        DL: [38, 50],
+        WR: [28, 36],
+        CB: [22, 30],
+        S:  [12, 18],
+        LB: [16, 24],
+        TE: [8,  14],
+        QB: [4,  8],
+        RB: [10, 16],
+      };
+      const [lo, hi] = caps[pos];
+      counts[pos] = clampBetween(base[pos] + swing, lo, hi);
+    }
+
+    // K/P: never exceed the caps (can be a bit lower occasionally)
+    counts.K = Math.min(base.K, Math.max(3, base.K - (Math.random() < 0.4 ? 1 : 0))); // 4–5 or 3–5
+    counts.P = Math.min(base.P, Math.max(1, base.P - (Math.random() < 0.5 ? 1 : 0))); // 2–3 or 1–3
+
+    // Ensure RB slightly more common than TE (at least +1)
+    if (counts.RB <= counts.TE) {
+      const need = counts.TE - counts.RB + 1;
+      counts.RB += need;
+      // borrow from a heavy group (OL/DL/WR/LB/CB) if total needs rebalancing later
+    }
+
+    // Rebalance total to exactly 224 by nudging adjustable positions
+    const targetTotal = 224;
+    let sum = Object.values(counts).reduce((a, b) => a + b, 0);
+    const pool = ["OL","DL","WR","CB","S","LB","TE","QB","RB"];
+
+    while (sum !== targetTotal) {
+      const dir = sum < targetTotal ? +1 : -1;
+      // Pick a position to adjust that won't break caps or RB>TE rule
+      const choice = pool[Math.floor(Math.random() * pool.length)];
+      const caps: Record<string, [number, number]> = {
+        OL: [44, 56], DL: [38, 50], WR: [28, 36], CB: [22, 30],
+        S: [12, 18], LB: [16, 24], TE: [8, 14], QB: [4, 8], RB: [10, 16]
+      };
+      const [lo, hi] = caps[choice];
+
+      // Try apply
+      const next = counts[choice] + dir;
+      // Keep RB ≥ TE + 1
+      if (choice === "RB" && !(next >= counts.TE + 1)) { continue; }
+      if (choice === "TE" && !(counts.RB >= next + 1)) { continue; }
+
+      if (next >= lo && next <= hi) {
+        counts[choice] = next;
+        sum += dir;
+      }
+    }
+
+    // Build the list from counts and shuffle
     const list: string[] = [];
-    Object.entries(counts).forEach(([pos, c]) => { for (let i=0;i<c;i++) list.push(pos); });
-    // Shuffle
+    Object.entries(counts).forEach(([pos, c]) => { for (let i=0; i<c; i++) list.push(pos); });
+
     for (let i = list.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [list[i], list[j]] = [list[j], list[i]];
@@ -546,7 +629,9 @@ export default function PlayerNameGenerator() {
     return list;
   }
 
-  /* ====== Generate ====== */
+  /* ==============================
+   Generate
+   ============================== */
   function generate() {
     const r = random;
     const out: PlayerRow[] = [];
@@ -599,12 +684,12 @@ export default function PlayerNameGenerator() {
       globalSet.add(key);
     }
 
-    // Build position counts for the last batch (PATCH 2)
+    // Position breakdown for last batch
     const counts: Record<string, number> = {};
     for (const p of out.map(o => o.position)) counts[p] = (counts[p] || 0) + 1;
     setLastBatch({ total: out.length, counts });
 
-    // Write rows (PATCH 1: clear option)
+    // Write rows
     if (clearBefore) {
       setRows(out);
     } else {
@@ -633,11 +718,10 @@ export default function PlayerNameGenerator() {
     </span>
   );
 
-  // Render a compact position breakdown string from lastBatch
   function renderBreakdown() {
     if (!lastBatch || lastBatch.total === 0) return null;
     const entries = Object.entries(lastBatch.counts)
-      .sort((a,b) => b[1]-a[1]) // highest first
+      .sort((a,b) => b[1]-a[1])
       .map(([pos, c]) => `${pos} ${c}`);
     return (
       <span className="text-xs text-gray-300">
