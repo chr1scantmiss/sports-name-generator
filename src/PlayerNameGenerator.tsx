@@ -1,13 +1,12 @@
 import React, { useMemo, useState, useEffect } from "react";
 
 /**
- * Player Name Generator — Draft Class Mode + Rookie Ages + Realistic NFL Position Mix
- * Patches:
- * - Clear before generate toggle
- * - Position breakdown for last batch
- * Update:
- * - NFL draft class positions now fluctuate slightly each batch (±3/±4),
- *   RB slightly more common than TE, Kickers/Punters never exceed caps.
+ * Player Name Generator
+ * - Complete Draft Class mode for Madden + NBA2K
+ * - NFL draft positions use user-provided ranges and always total 224
+ * - Never exceed K/P caps; gentle balancing; RB >= TE when possible
+ * - Clear-before-generate toggle + last-batch position breakdown
+ * - Ethnicity-aware names by country; NA pool for colleges
  */
 
 type Sport = "madden" | "nba2k";
@@ -28,7 +27,7 @@ type PlayerRow = {
   collegeOrCountry: string;
 };
 
-const STORAGE_KEY = "sgnc_players_v15";
+const STORAGE_KEY = "sgnc_players_v16";
 
 /* ==============================
    Countries — Europe + South America (A–Z), USA excluded
@@ -110,7 +109,7 @@ const NCAA_ALL_DI_UNSORTED: string[] = [
 const NCAA_ALL_DI: string[] = [...NCAA_ALL_DI_UNSORTED].sort((a,b)=>a.localeCompare(b));
 
 /* ==============================
-   Name pools
+   Name pools (College → North America; Country → region-appropriate)
    ============================== */
 
 // North America (for COLLEGE origin)
@@ -130,6 +129,7 @@ const LAST_NA = [
   "Bouchard","Lambert","Gagnon","Tremblay","Roy","Lefebvre","Moreau","Fortin","Gauthier","Morin"
 ];
 
+// International groups
 const NAME_GROUPS: Record<string, {first: string[]; last: string[]}> = {
   spanish: {
     first: ["Alejandro","Carlos","Diego","Eduardo","Fernando","Ignacio","Javier","Luis","Manuel","Miguel","Pablo","Sergio","Álvaro","Hugo","Nicolás","Tomás","Matías","Joaquín","Andrés","Gabriel"],
@@ -525,91 +525,11 @@ export default function PlayerNameGenerator() {
    NFL/NBA draft position builders
    ============================== */
 
-  // Helper to get a small random swing (±3 mostly, sometimes ±4)
-  function smallSwing(r: () => number) {
-    const base = Math.floor(r() * 7) - 3; // -3..+3
-    // 20% chance to bump magnitude by 1 (to allow the occasional ±4)
-    if (Math.random() < 0.2) {
-      return base > 0 ? base + 1 : base < 0 ? base - 1 : (r() < 0.5 ? 1 : -1);
-    }
-    return base;
-  }
-
-  function clampBetween(n: number, lo: number, hi: number) {
-    return Math.max(lo, Math.min(hi, n));
-  }
-
-  function nflDraftPositions(): string[] {
-    // Base pillar distribution (sum 224).
-    // Tweaked so RB is slightly more common than TE by default (RB12, TE11).
-    const base: Record<string, number> = {
-      OL: 50, DL: 44, WR: 32, CB: 26, S: 15, LB: 20, TE: 11, QB: 6, RB: 12, K: 5, P: 3
-    };
-
-    // Start with base and apply small swings to adjustable positions (not K/P).
-    const adjustable = ["OL","DL","WR","CB","S","LB","TE","QB","RB"] as const;
-    const counts: Record<string, number> = { ...base };
-
-    for (const pos of adjustable) {
-      const swing = smallSwing(Math.random);
-      // Set gentle min/max per role to avoid wild shapes
-      const caps: Record<string, [number, number]> = {
-        OL: [44, 56],
-        DL: [38, 50],
-        WR: [28, 36],
-        CB: [22, 30],
-        S:  [12, 18],
-        LB: [16, 24],
-        TE: [8,  14],
-        QB: [4,  8],
-        RB: [10, 16],
-      };
-      const [lo, hi] = caps[pos];
-      counts[pos] = clampBetween(base[pos] + swing, lo, hi);
-    }
-
-    // K/P: never exceed the caps (can be a bit lower occasionally)
-    counts.K = Math.min(base.K, Math.max(3, base.K - (Math.random() < 0.4 ? 1 : 0))); // 4–5 or 3–5
-    counts.P = Math.min(base.P, Math.max(1, base.P - (Math.random() < 0.5 ? 1 : 0))); // 2–3 or 1–3
-
-    // Ensure RB slightly more common than TE (at least +1)
-    if (counts.RB <= counts.TE) {
-      const need = counts.TE - counts.RB + 1;
-      counts.RB += need;
-      // borrow from a heavy group (OL/DL/WR/LB/CB) if total needs rebalancing later
-    }
-
-    // Rebalance total to exactly 224 by nudging adjustable positions
-    const targetTotal = 224;
-    let sum = Object.values(counts).reduce((a, b) => a + b, 0);
-    const pool = ["OL","DL","WR","CB","S","LB","TE","QB","RB"];
-
-    while (sum !== targetTotal) {
-      const dir = sum < targetTotal ? +1 : -1;
-      // Pick a position to adjust that won't break caps or RB>TE rule
-      const choice = pool[Math.floor(Math.random() * pool.length)];
-      const caps: Record<string, [number, number]> = {
-        OL: [44, 56], DL: [38, 50], WR: [28, 36], CB: [22, 30],
-        S: [12, 18], LB: [16, 24], TE: [8, 14], QB: [4, 8], RB: [10, 16]
-      };
-      const [lo, hi] = caps[choice];
-
-      // Try apply
-      const next = counts[choice] + dir;
-      // Keep RB ≥ TE + 1
-      if (choice === "RB" && !(next >= counts.TE + 1)) { continue; }
-      if (choice === "TE" && !(counts.RB >= next + 1)) { continue; }
-
-      if (next >= lo && next <= hi) {
-        counts[choice] = next;
-        sum += dir;
-      }
-    }
-
-    // Build the list from counts and shuffle
+  function nbaDraftPositions(): string[] {
+    // 60 players: PG10, SG10, SF10, PF10, C10, G/F5, F/C5
+    const counts: Record<string, number> = { PG:10, SG:10, SF:10, PF:10, C:10, "G/F":5, "F/C":5 };
     const list: string[] = [];
-    Object.entries(counts).forEach(([pos, c]) => { for (let i=0; i<c; i++) list.push(pos); });
-
+    Object.entries(counts).forEach(([pos, c]) => { for (let i=0;i<c;i++) list.push(pos); });
     for (let i = list.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [list[i], list[j]] = [list[j], list[i]];
@@ -617,11 +537,113 @@ export default function PlayerNameGenerator() {
     return list;
   }
 
-  function nbaDraftPositions(): string[] {
-    // 60 players: PG10, SG10, SF10, PF10, C10, G/F5, F/C5
-    const counts: Record<string, number> = { PG:10, SG:10, SF:10, PF:10, C:10, "G/F":5, "F/C":5 };
+  // ===== NEW: Madden ranges from your spec =====
+  const NFL_RANGE_MIN: Record<string, number> = {
+    OL: 39, DL: 39, WR: 27, CB: 27, LB: 25, S: 22, RB: 9, TE: 7, QB: 9, K: 2, P: 2
+  };
+  const NFL_RANGE_MAX: Record<string, number> = {
+    OL: 53, DL: 54, WR: 41, CB: 44, LB: 43, S: 41, RB: 17, TE: 14, QB: 16, K: 5, P: 4
+  };
+
+  function randInt(min: number, max: number) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function nflDraftPositions(): string[] {
+    const posOrder = ["OL","DL","WR","CB","LB","S","RB","TE","QB","K","P"] as const;
+    const counts: Record<string, number> = {} as any;
+
+    // 1) Start with a random pick within each range
+    for (const p of posOrder) {
+      counts[p] = randInt(NFL_RANGE_MIN[p], NFL_RANGE_MAX[p]);
+    }
+
+    // 2) Prefer RB >= TE (if both can move within ranges)
+    if (counts.RB < counts.TE) {
+      const diff = counts.TE - counts.RB;
+      const roomUpRB = NFL_RANGE_MAX.RB - counts.RB;
+      const roomDownTE = counts.TE - NFL_RANGE_MIN.TE;
+      const shift = Math.min(diff, roomUpRB, roomDownTE);
+      if (shift > 0) {
+        counts.RB += shift;
+        counts.TE -= shift;
+      }
+    }
+
+    // 3) Balance to exactly 224 total
+    const target = 224;
+    let sum = Object.values(counts).reduce((a, b) => a + b, 0);
+
+    // Adjustment preference:
+    // - When removing: take from bigger pools first (OL, DL, WR, CB, LB, S, RB, TE, QB) — never push below min
+    // - When adding: add to core pools first (OL, DL, WR, CB, LB, S, RB, TE, QB) — avoid K/P unless necessary
+    const removePref = ["OL","DL","WR","CB","LB","S","RB","TE","QB","K","P"];
+    const addPref    = ["OL","DL","WR","CB","LB","S","RB","TE","QB","K","P"];
+
+    let guard = 10000; // safety loop guard
+    while (sum !== target && guard-- > 0) {
+      if (sum > target) {
+        // Need to remove 1 somewhere with room above min
+        let changed = false;
+        for (const p of removePref) {
+          const next = counts[p] - 1;
+          if (next >= NFL_RANGE_MIN[p]) {
+            // Keep RB >= TE if possible
+            if (p === "RB" && next < counts.TE) continue;
+            counts[p] = next;
+            sum--;
+            changed = true;
+            break;
+          }
+        }
+        if (!changed) break; // can't adjust further within ranges
+      } else {
+        // sum < target — need to add 1 somewhere with room below max
+        let changed = false;
+        for (const p of addPref) {
+          const next = counts[p] + 1;
+          if (next <= NFL_RANGE_MAX[p]) {
+            // Keep RB >= TE if increasing TE
+            if (p === "TE" && counts.RB < next) continue;
+            counts[p] = next;
+            sum++;
+            changed = true;
+            break;
+          }
+        }
+        if (!changed) break;
+      }
+    }
+
+    // 4) Final RB >= TE touch-up if still violated and we can swap within ranges
+    if (counts.RB < counts.TE) {
+      const need = counts.TE - counts.RB;
+      // Try to move from TE -> RB directly
+      const canDownTE = counts.TE - NFL_RANGE_MIN.TE;
+      const canUpRB = NFL_RANGE_MAX.RB - counts.RB;
+      const move = Math.min(need, canDownTE, canUpRB);
+      counts.TE -= move;
+      counts.RB += move;
+
+      // If total changed (it shouldn't), re-balance minimally
+      let s2 = Object.values(counts).reduce((a,b)=>a+b,0);
+      while (s2 > target) {
+        for (const p of removePref) {
+          if (counts[p] > NFL_RANGE_MIN[p]) { counts[p]--; s2--; break; }
+        }
+      }
+      while (s2 < target) {
+        for (const p of addPref) {
+          if (counts[p] < NFL_RANGE_MAX[p]) { counts[p]++; s2++; break; }
+        }
+      }
+    }
+
+    // 5) Build the list from counts and shuffle
     const list: string[] = [];
-    Object.entries(counts).forEach(([pos, c]) => { for (let i=0;i<c;i++) list.push(pos); });
+    for (const [pos, c] of Object.entries(counts)) {
+      for (let i = 0; i < c; i++) list.push(pos);
+    }
     for (let i = list.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [list[i], list[j]] = [list[j], list[i]];
@@ -807,7 +829,7 @@ export default function PlayerNameGenerator() {
             </div>
             {draftClass && (
               <p className="text-xs text-gray-400">
-                Rookie ages auto‑set ({sport==="nba2k" ? "18–23" : "21–24"}). Position mix is pre‑balanced.
+                Rookie ages auto‑set ({sport==="nba2k" ? "18–23" : "21–24"}). Position mix is pre‑balanced by ranges.
               </p>
             )}
           </div>
