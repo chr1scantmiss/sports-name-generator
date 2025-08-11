@@ -2,26 +2,9 @@ import React, { useMemo, useState, useEffect } from "react";
 
 /**
  * Player Name Generator — Draft Class Mode + Rookie Ages + Realistic NFL Position Mix
- *
- * New:
- * - "Complete Draft Class" toggle next to Quantity:
- *   • NBA 2K = 60 players (2 rounds)
- *   • Madden (NFL) = 224 players (7 rounds)
- * - Rookie age ranges when Draft Class is ON:
- *   • NBA: 18–23
- *   • NFL: 21–24
- *   (Age controls disabled while Draft Class is ON)
- * - Position mix:
- *   • NBA: balanced mix across PG/SG/SF/PF/C (+ some G/F and F/C)
- *   • NFL: OL & DL most common; then WR; then CB, S, LB, TE; fewer QB/RB; K≤5, P≤3 (total 224)
- *
- * Still included:
- * - Origin-aware names (College → North America; Country → mapped EU/SA pools)
- * - Quantity default = 1 (when Draft Class OFF)
- * - NFL jersey rules by position
- * - Realistic height/weight archetypes
- * - No duplicate names across entire save
- * - Portrait initials, Copy, Clear
+ * + PATCHES:
+ *   1) "Clear before generate" toggle
+ *   2) Position breakdown badge for the last generated batch
  */
 
 type Sport = "madden" | "nba2k";
@@ -42,7 +25,7 @@ type PlayerRow = {
   collegeOrCountry: string;
 };
 
-const STORAGE_KEY = "sgnc_players_v13";
+const STORAGE_KEY = "sgnc_players_v14";
 
 /* ==============================
    Countries — Europe + South America (A–Z), USA excluded
@@ -124,7 +107,7 @@ const NCAA_ALL_DI_UNSORTED: string[] = [
 const NCAA_ALL_DI: string[] = [...NCAA_ALL_DI_UNSORTED].sort((a,b)=>a.localeCompare(b));
 
 /* ==============================
-   Name groups by language/region (College → NA names; Country → mapped pools)
+   Name groups (College → NA; Country → mapped EU/SA pools)
    ============================== */
 
 // North America (for COLLEGE origin)
@@ -386,7 +369,8 @@ export default function PlayerNameGenerator() {
   const [lockPosition, setLockPosition] = useState(false);
 
   const [quantity, setQuantity] = useState<number>(1); // default = 1
-  const [draftClass, setDraftClass] = useState<boolean>(false); // NEW: complete draft class
+  const [draftClass, setDraftClass] = useState<boolean>(false); // Complete Draft Class
+  const [clearBefore, setClearBefore] = useState<boolean>(false); // PATCH 1
 
   // Age controls
   const [useRandomAge, setUseRandomAge] = useState<boolean>(true);
@@ -419,7 +403,10 @@ export default function PlayerNameGenerator() {
   });
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(rows)); }, [rows]);
 
-  // Keep manualAge within the current sport's bounds when sport changes
+  // PATCH 2: last batch breakdown
+  const [lastBatch, setLastBatch] = useState<{ total: number; counts: Record<string, number> } | null>(null);
+
+  // Keep manualAge within current sport bounds when sport changes
   useEffect(() => {
     const { min, max } = ageBoundsForSport(sport);
     setManualAge(prev => clamp(prev, min, max));
@@ -430,9 +417,9 @@ export default function PlayerNameGenerator() {
     const base = seed.trim() ? Number(String(hash32(seed)) % 2 ** 32) : Math.floor(Math.random() * 2 ** 32);
     return rng(base);
   }, [seed, sport, position, quantity, useRandomSize, manualNumber, originMode, manualCollege, manualCountry,
-      lockSport, lockPosition, lockNumber, lockOrigin, lockSize, useRandomAge, manualAge, lockAge, draftClass]);
+      lockSport, lockPosition, lockNumber, lockOrigin, lockSize, useRandomAge, manualAge, lockAge, draftClass, clearBefore]);
 
-  /* ====== Names, origin-aware ====== */
+  /* ====== Names (origin-aware) ====== */
   function namePoolForOrigin(origin: {type: "college"|"country"; value: string}): {first: string[]; last: string[]} {
     if (origin.type === "college") return { first: FIRST_NA, last: LAST_NA };
     const g = COUNTRY_TO_GROUP[origin.value];
@@ -488,7 +475,6 @@ export default function PlayerNameGenerator() {
           return { type: "college", value: pick(NCAA_ALL_DI, r) };
       }
     }
-    // Unlocked: per player
     switch (originMode) {
       case "college": return { type: "college", value: manualCollege };
       case "country": return { type: "country", value: manualCountry };
@@ -515,7 +501,7 @@ export default function PlayerNameGenerator() {
     return { label: "Manual", h: inches, w };
   }
 
-  // Age resolution (normal vs. rookie draft)
+  // Ages
   function resolveAge(r: () => number, sp: Sport): number {
     if (draftClass) return randomRookieAgeForSport(sp, r);
     if (useRandomAge) return randomAgeForSport(sp, r);
@@ -527,17 +513,14 @@ export default function PlayerNameGenerator() {
     return lockSport ? (prior ?? sport) : sport;
   }
   function resolvePosition(r: () => number, sp: Sport): string {
-    if (draftClass) {
-      // In draft class mode, we control positions via distribution; this function is not used.
-      return "";
-    }
+    if (draftClass) return ""; // handled by draft distribution
     if (lockPosition) return position || (sp === "madden" ? NFL_POS[0] : NBA_POS[0]);
     return position || pick(sp === "madden" ? NFL_POS : NBA_POS, r);
   }
 
   /* ====== Draft class builders ====== */
   function nflDraftPositions(): string[] {
-    // Target counts (sum = 224): OL50, DL44, WR32, CB26, S15, LB20, TE12, QB6, RB11, K5, P3
+    // Total 224: OL50, DL44, WR32, CB26, S15, LB20, TE12, QB6, RB11, K5, P3
     const counts: Record<string, number> = {
       OL: 50, DL: 44, WR: 32, CB: 26, S: 15, LB: 20, TE: 12, QB: 6, RB: 11, K: 5, P: 3
     };
@@ -556,7 +539,6 @@ export default function PlayerNameGenerator() {
     const counts: Record<string, number> = { PG:10, SG:10, SF:10, PF:10, C:10, "G/F":5, "F/C":5 };
     const list: string[] = [];
     Object.entries(counts).forEach(([pos, c]) => { for (let i=0;i<c;i++) list.push(pos); });
-    // Shuffle
     for (let i = list.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [list[i], list[j]] = [list[j], list[i]];
@@ -564,6 +546,7 @@ export default function PlayerNameGenerator() {
     return list;
   }
 
+  /* ====== Generate ====== */
   function generate() {
     const r = random;
     const out: PlayerRow[] = [];
@@ -571,19 +554,12 @@ export default function PlayerNameGenerator() {
     const batchSet = new Set<string>();
 
     const sp = resolveSport(r);
-
-    // Draft class mode determines how many players & positions
     const targetCount = draftClass ? (sp === "nba2k" ? 60 : 224) : quantity;
-
-    // In draft class mode, disable/ignore manual position lock/choice
     const draftPositions = draftClass ? (sp === "nba2k" ? nbaDraftPositions() : nflDraftPositions()) : null;
 
     const batchOrigin = lockOrigin ? resolveOrigin(r) : undefined;
-    const batchAge = draftClass
-      ? undefined // rookies will be per-player but within rookie range
-      : (lockAge ? resolveAge(r, sp) : undefined);
-
-    const batchSizeSeed = lockSize && !draftClass // keep lock size behavior if not draft
+    const batchAge = draftClass ? undefined : (lockAge ? resolveAge(r, sp) : undefined);
+    const batchSizeSeed = lockSize && !draftClass
       ? resolveSize(r, sp, (position || (sp === "madden" ? NFL_POS[0] : NBA_POS[0])))
       : undefined;
 
@@ -592,7 +568,7 @@ export default function PlayerNameGenerator() {
       attempts++;
 
       const pos = draftClass
-        ? (draftPositions as string[])[out.length] // predetermined mix
+        ? (draftPositions as string[])[out.length]
         : resolvePosition(r, sp);
 
       const origin = batchOrigin ?? resolveOrigin(r);
@@ -623,7 +599,17 @@ export default function PlayerNameGenerator() {
       globalSet.add(key);
     }
 
-    setRows(prev => [...out, ...prev]);
+    // Build position counts for the last batch (PATCH 2)
+    const counts: Record<string, number> = {};
+    for (const p of out.map(o => o.position)) counts[p] = (counts[p] || 0) + 1;
+    setLastBatch({ total: out.length, counts });
+
+    // Write rows (PATCH 1: clear option)
+    if (clearBefore) {
+      setRows(out);
+    } else {
+      setRows(prev => [...out, ...prev]);
+    }
   }
 
   function cryptoId() {
@@ -646,6 +632,19 @@ export default function PlayerNameGenerator() {
       {locked ? "LOCKED" : "unlocked"}
     </span>
   );
+
+  // Render a compact position breakdown string from lastBatch
+  function renderBreakdown() {
+    if (!lastBatch || lastBatch.total === 0) return null;
+    const entries = Object.entries(lastBatch.counts)
+      .sort((a,b) => b[1]-a[1]) // highest first
+      .map(([pos, c]) => `${pos} ${c}`);
+    return (
+      <span className="text-xs text-gray-300">
+        Last batch: {lastBatch.total} • {entries.join(" • ")}
+      </span>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-8 space-y-6 text-white">
@@ -700,7 +699,7 @@ export default function PlayerNameGenerator() {
             </div>
           </div>
 
-          {/* Quantity + Draft Class toggle */}
+          {/* Quantity + Draft Class + Clear-before */}
           <div className="space-y-2">
             <label className="block text-sm font-medium">Quantity & Draft</label>
             <div className="flex items-center gap-3">
@@ -718,6 +717,10 @@ export default function PlayerNameGenerator() {
                 Complete Draft Class ({sport==="nba2k" ? "60 players" : "224 players"})
               </label>
             </div>
+            <div className="flex items-center gap-2 text-sm mt-1">
+              <input type="checkbox" checked={clearBefore} onChange={e=>setClearBefore(e.target.checked)} />
+              <span>Clear before generate</span>
+            </div>
             {draftClass && (
               <p className="text-xs text-gray-400">
                 Rookie ages auto‑set ({sport==="nba2k" ? "18–23" : "21–24"}). Position mix is pre‑balanced.
@@ -728,7 +731,7 @@ export default function PlayerNameGenerator() {
           {/* Age (disabled in draft mode) */}
           <div className="space-y-2">
             <label className="block text-sm font-medium">
-              Age {draftClass ? <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-blue-500 text-blue-400">Rookie range</span> : lockBadge(lockAge)}
+              Age {draftClass ? <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-blue-500 text-blue-400">Rookie range locked</span> : lockBadge(lockAge)}
             </label>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -886,6 +889,7 @@ export default function PlayerNameGenerator() {
       <div className="rounded-2xl border border-gray-700 shadow-sm bg-gray-900">
         <div className="p-4 border-b border-gray-700 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Generated Players ({rows.length})</h2>
+          {renderBreakdown()}
         </div>
         <div className="p-4">
           {rows.length === 0 ? (
