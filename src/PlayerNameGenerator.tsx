@@ -1,18 +1,16 @@
 import React, { useMemo, useState, useEffect } from "react";
 
 /**
- * Player Name Generator — Origin‑aware Names (EU/SA), NA names for College
+ * Player Name Generator — Origin‑aware Names + Canada Country Option
  *
- * What’s new:
- * - Names now match the player's origin:
- *    • If origin is a COUNTRY (Europe or South America): use country‑appropriate first/last name pools
- *    • If origin is COLLEGE: use North American (US/Canada) names
- * - Everything else remains the same (locks, archetypes, jersey rules, age ranges, etc.)
+ * What’s new (this version):
+ * - Added **Canada** to the Country list.
+ * - If a player’s origin is **Canada**, names come from the **North American (US/Canada)** pool.
  *
- * Notes:
- * - Countries list = Europe + South America (USA excluded)
- * - Colleges list = alphabetized D‑I (practical large list; update on request)
- * - No “iconic one‑off” names included
+ * Unchanged:
+ * - Origin-aware names for all other Europe/South America countries.
+ * - College origin uses North American (US/Canada) names.
+ * - Age ranges (NBA 18–38, Madden 20–40), jersey rules, archetypes, locks, portraits, copy/clear, quantity=1 default.
  */
 
 type Sport = "madden" | "nba2k";
@@ -33,10 +31,10 @@ type PlayerRow = {
   collegeOrCountry: string;
 };
 
-const STORAGE_KEY = "sgnc_players_v12";
+const STORAGE_KEY = "sgnc_players_v13";
 
 /* ==============================
-   Countries — Europe + South America (A–Z), USA excluded
+   Countries — Europe + South America (+ Canada), USA excluded
    ============================== */
 const COUNTRIES_EU_SA: string[] = [
   // Europe
@@ -48,7 +46,9 @@ const COUNTRIES_EU_SA: string[] = [
   "United Kingdom","Vatican City",
   // South America
   "Argentina","Bolivia","Brazil","Chile","Colombia","Ecuador","Guyana","Paraguay","Peru","Suriname","Uruguay",
-  "Venezuela"
+  "Venezuela",
+  // Added per request
+  "Canada"
 ].sort((a,b)=>a.localeCompare(b));
 
 /* ==============================
@@ -117,10 +117,9 @@ const NCAA_ALL_DI: string[] = [...NCAA_ALL_DI_UNSORTED].sort((a,b)=>a.localeComp
 
 /* ==============================
    Name groups by language/region
-   We map each country -> a group, and each group has first/last pools.
    ============================== */
 
-// North America (for COLLEGE origin: US/Canada vibe)
+// North America (for COLLEGE origin and for Canada as a country)
 const FIRST_NA = [
   "James","Michael","Christopher","Matthew","Andrew","Daniel","Joseph","Ryan","Brandon","Tyler",
   "Jacob","Ethan","Noah","Liam","Logan","Aiden","Elijah","Owen","Caleb","Jordan","Jason","Kevin",
@@ -134,10 +133,10 @@ const LAST_NA = [
   "Lee","Perez","Thompson","White","Harris","Sanchez","Clark","Ramirez","Lewis","Robinson",
   "Walker","Young","Allen","King","Wright","Scott","Torres","Nguyen","Hill","Flores",
   "Green","Adams","Nelson","Baker","Hall","Rivera","Campbell","Mitchell","Carter","Roberts",
-  "Bouchard","Lambert","Gagnon","Tremblay","Roy","Lefebvre","Moreau","Fortin","Gauthier","Morin" // add some common Canadian surnames
+  "Bouchard","Lambert","Gagnon","Tremblay","Roy","Lefebvre","Moreau","Fortin","Gauthier","Morin" // common Canadian surnames
 ];
 
-// Language/region pools (kept reasonably sized; tell me if you want larger lists)
+// Language/region pools
 const NAME_GROUPS: Record<string, {first: string[]; last: string[]}> = {
   spanish: {
     first: ["Alejandro","Carlos","Diego","Eduardo","Fernando","Ignacio","Javier","Luis","Manuel","Miguel","Pablo","Sergio","Álvaro","Hugo","Nicolás","Tomás","Matías","Joaquín","Andrés","Gabriel"],
@@ -219,7 +218,7 @@ const NAME_GROUPS: Record<string, {first: string[]; last: string[]}> = {
     first: ["Marius","Mindaugas","Vytautas","Tomas","Dainius","Saulius","Rimantas","Edgaras","Arvydas","Giedrius","Janis","Arturs","Rihards","Miks","Rolands","Edgars","Kaspars","Kristaps","Mareks","Reinis"],
     last:  ["Jankauskas","Kazlauskas","Stankevicius","Petrauskas","Bertulis","Balodis","Ozols","Liepa","Vilsons","Kalniņš","Berzins","Eglitis","Krastiņš","Mežs","Vilks","Lācītis","Zariņš","Sproģis","Ābols","Siliņš"]
   },
-  portuguese_pt: { // Portugal specifically (shares with portuguese)
+  portuguese_pt: { // Portugal specifically
     first: ["André","Bernardo","Diogo","Francisco","Gonçalo","João","Luís","Miguel","Pedro","Tiago"],
     last:  ["Silva","Santos","Ferreira","Pereira","Oliveira","Rodrigues","Martins","Costa","Gonçalves","Lopes"]
   },
@@ -227,23 +226,29 @@ const NAME_GROUPS: Record<string, {first: string[]; last: string[]}> = {
     first: ["Oliver","Jack","Harry","George","Charlie","Alfie","Oscar","James","Leo","Thomas","Jacob","William","Henry","Alexander","Freddie","Daniel","Finlay","Louis","Ethan","Max"],
     last:  ["Smith","Jones","Taylor","Brown","Williams","Wilson","Johnson","Davies","Evans","Thomas","Roberts","Walker","Wright","Thompson","White","Edwards","Hughes","Green","Hall","Clark"]
   },
-  greek_cypriot: undefined, // use greek
   swiss_mix: { // Switzerland mixed FR/DE/IT
     first: ["Luca","Leon","Noah","Marco","Matteo","Julien","Léon","Nico","Fabian","Tim","Joel","Raphael","Pascal","Nils","Daniel","Elias","Jan","Yannick","Robin","Sandro"],
     last:  ["Müller","Meier","Schmid","Keller","Weber","Fischer","Gerber","Huber","Martin","Bernasconi","Rossi","Fontana","Morel","Dubois","Roy","Favre","Baumann","Kunz","Schneider","Bianchi"]
   },
   dutch_sur: { // Suriname (Dutch influence)
     first: ["Ravi","Dinesh","Sunil","Kevin","Michael","Ricardo","Jamal","Imran","Ashwin","Jason","Rakesh","Farid","Rishi","Vikram","Andre","Diego","Stefan","Daniel","Dylan","Ryan"],
-    last:  ["Janssen","van Dijk","Bouterse","Essed","Gymnast","Pinas","Somai","Balwant","Khan","Baksh","Mohamed","Rachid","Fernandes","Gomes","Lopes","Sardjoe","Chin","Doekhi","Abdoel","Ramdien"]
+    last:  ["Janssen","van Dijk","Bouterse","Essed","Pinas","Somai","Balwant","Khan","Baksh","Mohamed","Rachid","Fernandes","Gomes","Lopes","Sardjoe","Chin","Doekhi","Abdoel","Ramdien"]
   },
-  guyana_en: { // Guyana English/Indo/Chinese/ Afro mix; keep generic English + Indian mix
+  guyana_en: { // Guyana mixed: English + Indian heritage common
     first: ["Ravi","Ajay","Vishal","Imran","Akeem","Anthony","Shane","Andre","Deon","Michael","Jason","Dwayne","Kumar","Ryan","Troy","Devon","Kevin","Raj","Samuel","Trevor"],
     last:  ["Persaud","Singh","Khan","Ali","Ramjohn","Chand","Mohamed","Lewis","Thomas","Williams","Francis","Henry","Adams","Grant","Peters","Roberts","Smith","Jordan","Hinds","Allen"]
   }
 };
 
 // Map each country to a name group key
-const COUNTRY_TO_GROUP: Record<string, keyof typeof NAME_GROUPS | "greek" | "portuguese" | "spanish" | "english_uk_ie" | "dutch" | "nordic" | "finnish_estonian" | "polish_czech_slovak" | "balkans_south_slavic" | "turkish" | "romanian_moldovan" | "hungarian" | "albanian" | "armenian" | "georgian" | "azerbaijani" | "ukrainian_belarusian" | "baltic" | "portuguese_pt" | "swiss_mix" | "dutch_sur" | "guyana_en"> = {
+const COUNTRY_TO_GROUP: Record<string,
+  keyof typeof NAME_GROUPS |
+  "greek" | "portuguese" | "spanish" | "english_uk_ie" | "dutch" | "nordic" |
+  "finnish_estonian" | "polish_czech_slovak" | "balkans_south_slavic" | "turkish" |
+  "romanian_moldovan" | "hungarian" | "albanian" | "armenian" | "georgian" |
+  "azerbaijani" | "ukrainian_belarusian" | "baltic" | "portuguese_pt" | "swiss_mix" |
+  "dutch_sur" | "guyana_en"
+> = {
   // Europe
   "Albania":"albanian","Andorra":"spanish","Armenia":"armenian","Austria":"german","Azerbaijan":"azerbaijani",
   "Belarus":"ukrainian_belarusian","Belgium":"french","Bosnia and Herzegovina":"balkans_south_slavic","Bulgaria":"balkans_south_slavic",
@@ -259,6 +264,7 @@ const COUNTRY_TO_GROUP: Record<string, keyof typeof NAME_GROUPS | "greek" | "por
   // South America
   "Argentina":"spanish","Bolivia":"spanish","Brazil":"portuguese","Chile":"spanish","Colombia":"spanish","Ecuador":"spanish",
   "Guyana":"guyana_en","Paraguay":"spanish","Peru":"spanish","Suriname":"dutch_sur","Uruguay":"spanish","Venezuela":"spanish"
+  // Canada handled specially to use North American pool
 };
 
 /* ==============================
@@ -423,14 +429,20 @@ export default function PlayerNameGenerator() {
 
   /* ====== Origin-aware name picking ====== */
   function namePoolForOrigin(origin: {type: "college"|"country"; value: string}): {first: string[]; last: string[]} {
+    // College = US/Canada pool
     if (origin.type === "college") {
       return { first: FIRST_NA, last: LAST_NA };
     }
+    // Canada as a country => also US/Canada pool
+    if (origin.type === "country" && origin.value === "Canada") {
+      return { first: FIRST_NA, last: LAST_NA };
+    }
+    // Other countries => map to region/language group
     const country = origin.value;
     const groupKey = COUNTRY_TO_GROUP[country];
     const group = groupKey ? NAME_GROUPS[groupKey] : undefined;
     if (group && group.first.length && group.last.length) return group;
-    // Fallback (should be rare)
+    // Fallback (rare)
     return { first: FIRST_INTL_GENERIC, last: LAST_INTL_GENERIC };
   }
 
