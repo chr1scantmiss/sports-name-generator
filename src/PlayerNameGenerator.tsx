@@ -1,16 +1,27 @@
 import React, { useMemo, useState, useEffect } from "react";
 
 /**
- * Player Name Generator — Origin‑aware Names + Canada Country Option
+ * Player Name Generator — Draft Class Mode + Rookie Ages + Realistic NFL Position Mix
  *
- * What’s new (this version):
- * - Added **Canada** to the Country list.
- * - If a player’s origin is **Canada**, names come from the **North American (US/Canada)** pool.
+ * New:
+ * - "Complete Draft Class" toggle next to Quantity:
+ *   • NBA 2K = 60 players (2 rounds)
+ *   • Madden (NFL) = 224 players (7 rounds)
+ * - Rookie age ranges when Draft Class is ON:
+ *   • NBA: 18–23
+ *   • NFL: 21–24
+ *   (Age controls disabled while Draft Class is ON)
+ * - Position mix:
+ *   • NBA: balanced mix across PG/SG/SF/PF/C (+ some G/F and F/C)
+ *   • NFL: OL & DL most common; then WR; then CB, S, LB, TE; fewer QB/RB; K≤5, P≤3 (total 224)
  *
- * Unchanged:
- * - Origin-aware names for all other Europe/South America countries.
- * - College origin uses North American (US/Canada) names.
- * - Age ranges (NBA 18–38, Madden 20–40), jersey rules, archetypes, locks, portraits, copy/clear, quantity=1 default.
+ * Still included:
+ * - Origin-aware names (College → North America; Country → mapped EU/SA pools)
+ * - Quantity default = 1 (when Draft Class OFF)
+ * - NFL jersey rules by position
+ * - Realistic height/weight archetypes
+ * - No duplicate names across entire save
+ * - Portrait initials, Copy, Clear
  */
 
 type Sport = "madden" | "nba2k";
@@ -34,7 +45,7 @@ type PlayerRow = {
 const STORAGE_KEY = "sgnc_players_v13";
 
 /* ==============================
-   Countries — Europe + South America (+ Canada), USA excluded
+   Countries — Europe + South America (A–Z), USA excluded
    ============================== */
 const COUNTRIES_EU_SA: string[] = [
   // Europe
@@ -46,14 +57,11 @@ const COUNTRIES_EU_SA: string[] = [
   "United Kingdom","Vatican City",
   // South America
   "Argentina","Bolivia","Brazil","Chile","Colombia","Ecuador","Guyana","Paraguay","Peru","Suriname","Uruguay",
-  "Venezuela",
-  // Added per request
-  "Canada"
+  "Venezuela"
 ].sort((a,b)=>a.localeCompare(b));
 
 /* ==============================
    NCAA Division I schools — Alphabetical (men’s D‑I)
-   (Tell me if anything is missing/renamed; realignments happen.)
    ============================== */
 const NCAA_ALL_DI_UNSORTED: string[] = [
   "Abilene Christian","Air Force","Akron","Alabama","Alabama A&M","Alabama State","Albany","Alcorn State",
@@ -116,10 +124,10 @@ const NCAA_ALL_DI_UNSORTED: string[] = [
 const NCAA_ALL_DI: string[] = [...NCAA_ALL_DI_UNSORTED].sort((a,b)=>a.localeCompare(b));
 
 /* ==============================
-   Name groups by language/region
+   Name groups by language/region (College → NA names; Country → mapped pools)
    ============================== */
 
-// North America (for COLLEGE origin and for Canada as a country)
+// North America (for COLLEGE origin)
 const FIRST_NA = [
   "James","Michael","Christopher","Matthew","Andrew","Daniel","Joseph","Ryan","Brandon","Tyler",
   "Jacob","Ethan","Noah","Liam","Logan","Aiden","Elijah","Owen","Caleb","Jordan","Jason","Kevin",
@@ -133,10 +141,9 @@ const LAST_NA = [
   "Lee","Perez","Thompson","White","Harris","Sanchez","Clark","Ramirez","Lewis","Robinson",
   "Walker","Young","Allen","King","Wright","Scott","Torres","Nguyen","Hill","Flores",
   "Green","Adams","Nelson","Baker","Hall","Rivera","Campbell","Mitchell","Carter","Roberts",
-  "Bouchard","Lambert","Gagnon","Tremblay","Roy","Lefebvre","Moreau","Fortin","Gauthier","Morin" // common Canadian surnames
+  "Bouchard","Lambert","Gagnon","Tremblay","Roy","Lefebvre","Moreau","Fortin","Gauthier","Morin"
 ];
 
-// Language/region pools
 const NAME_GROUPS: Record<string, {first: string[]; last: string[]}> = {
   spanish: {
     first: ["Alejandro","Carlos","Diego","Eduardo","Fernando","Ignacio","Javier","Luis","Manuel","Miguel","Pablo","Sergio","Álvaro","Hugo","Nicolás","Tomás","Matías","Joaquín","Andrés","Gabriel"],
@@ -162,7 +169,7 @@ const NAME_GROUPS: Record<string, {first: string[]; last: string[]}> = {
     first: ["Daan","Sem","Luuk","Jesse","Lars","Thijs","Bram","Timo","Niels","Koen","Ruben","Sven","Jasper","Guus","Jens","Milan","Sam","Max","Tom","Nick"],
     last:  ["de Jong","Jansen","de Vries","van den Berg","van Dijk","Bakker","Visser","Smit","Meijer","de Boer","Mulder","Bos","Peters","Hendriks","van Leeuwen","van der Meer","Vos","Kok","Willems","van Dam"]
   },
-  nordic: { // Norway, Sweden, Denmark, Iceland
+  nordic: {
     first: ["Anders","Erik","Lars","Karl","Henrik","Jonas","Magnus","Nils","Oskar","Per","Sven","Tobias","Viktor","Mikael","Johan","Emil","Filip","Mats","Rasmus","Elias"],
     last:  ["Johansson","Andersen","Hansen","Larsen","Olsen","Nielsen","Eriksson","Berg","Lund","Håkansson","Svensson","Iversen","Dahl","Pedersen","Gustafsson","Jakobsen","Halvorsen","Magnussen","Hagen","Kristensen"]
   },
@@ -174,7 +181,7 @@ const NAME_GROUPS: Record<string, {first: string[]; last: string[]}> = {
     first: ["Jakub","Jan","Adam","Tomasz","Mateusz","Marek","Petr","Lukáš","Ondřej","Miroslav","Jiri","Kamil","Patryk","Filip","Dominik","Radek","Viktor","Daniel","Pavel","Martin"],
     last:  ["Nowak","Kowalski","Wiśniewski","Novák","Svoboda","Dvořák","Zieliński","Szymański","Mazur","Kaczmarek","Kučera","Procházka","Polák","Kopecký","Urban","Král","Jelínek","Krupa","Růžička","Malý"]
   },
-  balkans_south_slavic: { // Serbia, Croatia, Bosnia, Slovenia, N. Macedonia, Montenegro
+  balkans_south_slavic: {
     first: ["Marko","Nikola","Milan","Luka","Stefan","Petar","Aleksandar","Nemanja","Milos","Vladimir","Dario","Ante","Ivan","Josip","Matej","Tomislav","Zoran","Goran","Dragan","Bojan"],
     last:  ["Jovanović","Petrović","Nikolić","Kovačević","Ilić","Marković","Stojanović","Knežević","Bogdanović","Radojević","Kovačić","Horvat","Kralj","Koren","Radić","Matić","Vuković","Milinković","Vrbanac","Barišić"]
   },
@@ -196,11 +203,11 @@ const NAME_GROUPS: Record<string, {first: string[]; last: string[]}> = {
   },
   albanian: {
     first: ["Ardit","Erion","Kujtim","Besnik","Gentian","Arben","Elton","Granit","Ilir","Valon","Edon","Dritan","Luan","Blerim","Flamur","Altin","Bujar","Shkëlzen","Fatos","Kreshnik"],
-    last:  ["Hoxha","Dervishi","Krasniqi","Berisha","Gashi","Shala","Basha","Rama","Bytyqi","Thaçi","Mustafa","Lika","Gashi","Dema","Bajrami","Selmani","Ismaili","Halimi","Zeqiri","Gashi"]
+    last:  ["Hoxha","Dervishi","Krasniqi","Berisha","Gashi","Shala","Basha","Rama","Bytyqi","Thaçi","Mustafa","Lika","Dema","Bajrami","Selmani","Ismaili","Halimi","Zeqiri","Gashi","Berbatovci"]
   },
   armenian: {
     first: ["Arman","Gevorg","Hayk","Tigran","Vardan","Ara","Levon","Artur","Gor","Stepan","Karen","Narek","Aram","Suren","Samvel","Hrach","Ashot","Edgar","Vahe","David"],
-    last:  ["Petrosyan","Grigoryan","Harutyunyan","Karapetyan","Sargsyan","Hovhannisyan","Vardanyan","Avetisyan","Hakobyan","Ghazaryan","Baghdasaryan","Manukyan","Stepanyan","Mkrtchyan","Yeritsyan","Babayan","Musheghyan","Khachatryan","Tadevosyan","Davtyan"]
+    last:  ["Petrosyan","Grigoryan","Harutyunyan","Karapetyan","Sargsyan","Hovhannisyan","Vardanyan","Avetisyan","Hakobyan","Ghazaryan","Baghdasaryan","Manukyan","Stepanyan","Mkrtchyan","Yeritsyan","Babayan","Khachatryan","Tadevosyan","Davtyan"]
   },
   georgian: {
     first: ["Giorgi","Irakli","Levan","Mikheil","Davit","Zurab","Tornike","Nika","Besik","Vakhtang","Temur","Aleksandre","Otar","Kakha","Shota","Avto","Sandro","Beka","Aleko","Lasha"],
@@ -214,11 +221,11 @@ const NAME_GROUPS: Record<string, {first: string[]; last: string[]}> = {
     first: ["Andriy","Oleksandr","Dmytro","Serhii","Yurii","Vladyslav","Ihor","Taras","Denys","Mykola","Pavlo","Artem","Maksym","Bohdan","Vitalii","Valentyn","Oleh","Roman","Timofii","Yevhen"],
     last:  ["Shevchenko","Kovalenko","Bondarenko","Tkachenko","Melnyk","Polishchuk","Boyko","Kravchenko","Marchenko","Lysenko","Ivanenko","Kovalchuk","Hrytsenko","Mazur","Zinchenko","Kozak","Moroz","Sydorenko","Volkov","Tarasenko"]
   },
-  baltic: { // Latvia, Lithuania
+  baltic: {
     first: ["Marius","Mindaugas","Vytautas","Tomas","Dainius","Saulius","Rimantas","Edgaras","Arvydas","Giedrius","Janis","Arturs","Rihards","Miks","Rolands","Edgars","Kaspars","Kristaps","Mareks","Reinis"],
-    last:  ["Jankauskas","Kazlauskas","Stankevicius","Petrauskas","Bertulis","Balodis","Ozols","Liepa","Vilsons","Kalniņš","Berzins","Eglitis","Krastiņš","Mežs","Vilks","Lācītis","Zariņš","Sproģis","Ābols","Siliņš"]
+    last:  ["Jankauskas","Kazlauskas","Stankevicius","Petrauskas","Balodis","Ozols","Liepa","Vilsons","Kalniņš","Berziņš","Eglitis","Krastiņš","Mežs","Vilks","Lācītis","Zariņš","Sproģis","Ābols","Siliņš"]
   },
-  portuguese_pt: { // Portugal specifically
+  portuguese_pt: {
     first: ["André","Bernardo","Diogo","Francisco","Gonçalo","João","Luís","Miguel","Pedro","Tiago"],
     last:  ["Silva","Santos","Ferreira","Pereira","Oliveira","Rodrigues","Martins","Costa","Gonçalves","Lopes"]
   },
@@ -226,29 +233,21 @@ const NAME_GROUPS: Record<string, {first: string[]; last: string[]}> = {
     first: ["Oliver","Jack","Harry","George","Charlie","Alfie","Oscar","James","Leo","Thomas","Jacob","William","Henry","Alexander","Freddie","Daniel","Finlay","Louis","Ethan","Max"],
     last:  ["Smith","Jones","Taylor","Brown","Williams","Wilson","Johnson","Davies","Evans","Thomas","Roberts","Walker","Wright","Thompson","White","Edwards","Hughes","Green","Hall","Clark"]
   },
-  swiss_mix: { // Switzerland mixed FR/DE/IT
+  swiss_mix: {
     first: ["Luca","Leon","Noah","Marco","Matteo","Julien","Léon","Nico","Fabian","Tim","Joel","Raphael","Pascal","Nils","Daniel","Elias","Jan","Yannick","Robin","Sandro"],
     last:  ["Müller","Meier","Schmid","Keller","Weber","Fischer","Gerber","Huber","Martin","Bernasconi","Rossi","Fontana","Morel","Dubois","Roy","Favre","Baumann","Kunz","Schneider","Bianchi"]
   },
-  dutch_sur: { // Suriname (Dutch influence)
+  dutch_sur: {
     first: ["Ravi","Dinesh","Sunil","Kevin","Michael","Ricardo","Jamal","Imran","Ashwin","Jason","Rakesh","Farid","Rishi","Vikram","Andre","Diego","Stefan","Daniel","Dylan","Ryan"],
     last:  ["Janssen","van Dijk","Bouterse","Essed","Pinas","Somai","Balwant","Khan","Baksh","Mohamed","Rachid","Fernandes","Gomes","Lopes","Sardjoe","Chin","Doekhi","Abdoel","Ramdien"]
   },
-  guyana_en: { // Guyana mixed: English + Indian heritage common
+  guyana_en: {
     first: ["Ravi","Ajay","Vishal","Imran","Akeem","Anthony","Shane","Andre","Deon","Michael","Jason","Dwayne","Kumar","Ryan","Troy","Devon","Kevin","Raj","Samuel","Trevor"],
     last:  ["Persaud","Singh","Khan","Ali","Ramjohn","Chand","Mohamed","Lewis","Thomas","Williams","Francis","Henry","Adams","Grant","Peters","Roberts","Smith","Jordan","Hinds","Allen"]
   }
 };
 
-// Map each country to a name group key
-const COUNTRY_TO_GROUP: Record<string,
-  keyof typeof NAME_GROUPS |
-  "greek" | "portuguese" | "spanish" | "english_uk_ie" | "dutch" | "nordic" |
-  "finnish_estonian" | "polish_czech_slovak" | "balkans_south_slavic" | "turkish" |
-  "romanian_moldovan" | "hungarian" | "albanian" | "armenian" | "georgian" |
-  "azerbaijani" | "ukrainian_belarusian" | "baltic" | "portuguese_pt" | "swiss_mix" |
-  "dutch_sur" | "guyana_en"
-> = {
+const COUNTRY_TO_GROUP: Record<string, keyof typeof NAME_GROUPS> = {
   // Europe
   "Albania":"albanian","Andorra":"spanish","Armenia":"armenian","Austria":"german","Azerbaijan":"azerbaijani",
   "Belarus":"ukrainian_belarusian","Belgium":"french","Bosnia and Herzegovina":"balkans_south_slavic","Bulgaria":"balkans_south_slavic",
@@ -264,16 +263,14 @@ const COUNTRY_TO_GROUP: Record<string,
   // South America
   "Argentina":"spanish","Bolivia":"spanish","Brazil":"portuguese","Chile":"spanish","Colombia":"spanish","Ecuador":"spanish",
   "Guyana":"guyana_en","Paraguay":"spanish","Peru":"spanish","Suriname":"dutch_sur","Uruguay":"spanish","Venezuela":"spanish"
-  // Canada handled specially to use North American pool
 };
 
 /* ==============================
-   Jerseys: NFL position‑based
+   Jerseys & positions
    ============================== */
 const NFL_POS = ["QB","RB","WR","TE","OL","DL","LB","CB","S","K","P"];
 const NBA_POS = ["PG","SG","G/F","SF","PF","F/C","C"];
 
-// NFL jersey number rules (inclusive ranges)
 const NFL_NUMBER_RANGES: Record<string, Array<[number, number]>> = {
   QB: [[0, 19]],
   RB: [[0, 44]],
@@ -316,20 +313,30 @@ const NBA_ARCH: Record<string, Archetype[]> = {
 };
 
 /* ==============================
-   Age helpers (sport‑specific ranges)
+   Ages
    ============================== */
 function ageBoundsForSport(sp: Sport): {min:number; max:number} {
   return sp === "nba2k" ? { min: 18, max: 38 } : { min: 20, max: 40 };
 }
+function rookieAgeBoundsForSport(sp: Sport): {min:number; max:number} {
+  return sp === "nba2k" ? { min: 18, max: 23 } : { min: 21, max: 24 }; // rookie ranges
+}
+function randomIn(min: number, max: number, r: () => number) {
+  return Math.round(min + (max - min) * r());
+}
 function randomAgeForSport(sp: Sport, r: () => number): number {
   const { min, max } = ageBoundsForSport(sp);
   const roll = r();
-  const target = roll < 0.7 ? Math.round(min + (Math.min(min + 5, max) - min) * r()) : Math.round(min + (max - min) * r());
+  const target = roll < 0.7 ? randomIn(min, Math.min(min + 5, max), r) : randomIn(min, max, r);
   return Math.max(min, Math.min(max, target));
+}
+function randomRookieAgeForSport(sp: Sport, r: () => number): number {
+  const { min, max } = rookieAgeBoundsForSport(sp);
+  return randomIn(min, max, r);
 }
 
 /* ==============================
-   Generic / fallback name pools (if a mapping is missing)
+   Generic fallback names
    ============================== */
 const FIRST_INTL_GENERIC = ["Niko","Jonas","Dario","Marco","Thiago","Mateo","Pedro","Enzo","Leo","Hugo","Anton","Roman","Milan","Emil","Ilya","Omar","Youssef","Soren","Magnus","Filip"];
 const LAST_INTL_GENERIC  = ["Fernandez","Alvarez","Silva","Costa","Rossi","Bianchi","Dubois","Lefevre","Kovacs","Novak","Horvat","Popov","Ivanov","Vasilev","Kumar","Hassan","Aziz","Lund","Hansen","Petrov"];
@@ -379,8 +386,9 @@ export default function PlayerNameGenerator() {
   const [lockPosition, setLockPosition] = useState(false);
 
   const [quantity, setQuantity] = useState<number>(1); // default = 1
+  const [draftClass, setDraftClass] = useState<boolean>(false); // NEW: complete draft class
 
-  // Age controls (sport-specific)
+  // Age controls
   const [useRandomAge, setUseRandomAge] = useState<boolean>(true);
   const { min: ageMinCurrent, max: ageMaxCurrent } = ageBoundsForSport(sport);
   const [manualAge, setManualAge] = useState<number>(Math.round((ageMinCurrent + ageMaxCurrent) / 2));
@@ -422,30 +430,16 @@ export default function PlayerNameGenerator() {
     const base = seed.trim() ? Number(String(hash32(seed)) % 2 ** 32) : Math.floor(Math.random() * 2 ** 32);
     return rng(base);
   }, [seed, sport, position, quantity, useRandomSize, manualNumber, originMode, manualCollege, manualCountry,
-      lockSport, lockPosition, lockNumber, lockOrigin, lockSize, useRandomAge, manualAge, lockAge]);
+      lockSport, lockPosition, lockNumber, lockOrigin, lockSize, useRandomAge, manualAge, lockAge, draftClass]);
 
-  // Position lists
-  const positionChoices = sport === "madden" ? NFL_POS : NBA_POS;
-
-  /* ====== Origin-aware name picking ====== */
+  /* ====== Names, origin-aware ====== */
   function namePoolForOrigin(origin: {type: "college"|"country"; value: string}): {first: string[]; last: string[]} {
-    // College = US/Canada pool
-    if (origin.type === "college") {
-      return { first: FIRST_NA, last: LAST_NA };
-    }
-    // Canada as a country => also US/Canada pool
-    if (origin.type === "country" && origin.value === "Canada") {
-      return { first: FIRST_NA, last: LAST_NA };
-    }
-    // Other countries => map to region/language group
-    const country = origin.value;
-    const groupKey = COUNTRY_TO_GROUP[country];
-    const group = groupKey ? NAME_GROUPS[groupKey] : undefined;
-    if (group && group.first.length && group.last.length) return group;
-    // Fallback (rare)
+    if (origin.type === "college") return { first: FIRST_NA, last: LAST_NA };
+    const g = COUNTRY_TO_GROUP[origin.value];
+    const pool = g ? NAME_GROUPS[g] : undefined;
+    if (pool && pool.first.length && pool.last.length) return pool;
     return { first: FIRST_INTL_GENERIC, last: LAST_INTL_GENERIC };
   }
-
   function makeName(r: () => number, origin: {type: "college"|"country"; value: string}) {
     const pool = namePoolForOrigin(origin);
     const first = pick(pool.first, r);
@@ -453,7 +447,7 @@ export default function PlayerNameGenerator() {
     return toTitleCase(`${first} ${last}`);
   }
 
-  /* ====== Attribute helpers ====== */
+  /* ====== Attributes ====== */
   function chooseArchetype(sp: Sport, pos: string, r: () => number): { label: string; h: number; w: number } {
     const table = sp === "madden" ? NFL_ARCH : NBA_ARCH;
     const list = (table as any)[pos] || (Object.values(table)[0] as Archetype[]);
@@ -521,8 +515,9 @@ export default function PlayerNameGenerator() {
     return { label: "Manual", h: inches, w };
   }
 
-  // Age resolution
+  // Age resolution (normal vs. rookie draft)
   function resolveAge(r: () => number, sp: Sport): number {
+    if (draftClass) return randomRookieAgeForSport(sp, r);
     if (useRandomAge) return randomAgeForSport(sp, r);
     const { min, max } = ageBoundsForSport(sp);
     return clamp(Math.round(manualAge), min, max);
@@ -532,8 +527,41 @@ export default function PlayerNameGenerator() {
     return lockSport ? (prior ?? sport) : sport;
   }
   function resolvePosition(r: () => number, sp: Sport): string {
+    if (draftClass) {
+      // In draft class mode, we control positions via distribution; this function is not used.
+      return "";
+    }
     if (lockPosition) return position || (sp === "madden" ? NFL_POS[0] : NBA_POS[0]);
     return position || pick(sp === "madden" ? NFL_POS : NBA_POS, r);
+  }
+
+  /* ====== Draft class builders ====== */
+  function nflDraftPositions(): string[] {
+    // Target counts (sum = 224): OL50, DL44, WR32, CB26, S15, LB20, TE12, QB6, RB11, K5, P3
+    const counts: Record<string, number> = {
+      OL: 50, DL: 44, WR: 32, CB: 26, S: 15, LB: 20, TE: 12, QB: 6, RB: 11, K: 5, P: 3
+    };
+    const list: string[] = [];
+    Object.entries(counts).forEach(([pos, c]) => { for (let i=0;i<c;i++) list.push(pos); });
+    // Shuffle
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    return list;
+  }
+
+  function nbaDraftPositions(): string[] {
+    // 60 players: PG10, SG10, SF10, PF10, C10, G/F5, F/C5
+    const counts: Record<string, number> = { PG:10, SG:10, SF:10, PF:10, C:10, "G/F":5, "F/C":5 };
+    const list: string[] = [];
+    Object.entries(counts).forEach(([pos, c]) => { for (let i=0;i<c;i++) list.push(pos); });
+    // Shuffle
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    return list;
   }
 
   function generate() {
@@ -542,32 +570,45 @@ export default function PlayerNameGenerator() {
     const globalSet = new Set(rows.map(n => n.name.toLowerCase()));
     const batchSet = new Set<string>();
 
-    const batchSport = resolveSport(r);
-    const batchPos = lockPosition ? resolvePosition(r, batchSport) : undefined;
+    const sp = resolveSport(r);
+
+    // Draft class mode determines how many players & positions
+    const targetCount = draftClass ? (sp === "nba2k" ? 60 : 224) : quantity;
+
+    // In draft class mode, disable/ignore manual position lock/choice
+    const draftPositions = draftClass ? (sp === "nba2k" ? nbaDraftPositions() : nflDraftPositions()) : null;
+
     const batchOrigin = lockOrigin ? resolveOrigin(r) : undefined;
-    const batchSizeSeed = lockSize ? resolveSize(r, batchSport, batchPos || resolvePosition(r, batchSport)) : undefined;
-    const batchAge = lockAge ? resolveAge(r, batchSport) : undefined;
+    const batchAge = draftClass
+      ? undefined // rookies will be per-player but within rookie range
+      : (lockAge ? resolveAge(r, sp) : undefined);
+
+    const batchSizeSeed = lockSize && !draftClass // keep lock size behavior if not draft
+      ? resolveSize(r, sp, (position || (sp === "madden" ? NFL_POS[0] : NBA_POS[0])))
+      : undefined;
 
     let attempts = 0;
-    while (out.length < quantity && attempts < quantity * 400) {
+    while (out.length < targetCount && attempts < targetCount * 500) {
       attempts++;
-      const sp = batchSport;
-      const pos = batchPos ?? resolvePosition(r, sp);
+
+      const pos = draftClass
+        ? (draftPositions as string[])[out.length] // predetermined mix
+        : resolvePosition(r, sp);
 
       const origin = batchOrigin ?? resolveOrigin(r);
       const name = makeName(r, origin);
       const key = name.toLowerCase();
       if (globalSet.has(key) || batchSet.has(key)) continue;
 
-      const size = batchSizeSeed ?? resolveSize(r, sp, pos);
-      const number = resolveNumber(r, sp, pos);
-      const age = batchAge ?? resolveAge(r, sp);
+      const size = batchSizeSeed ?? resolveSize(r, sp, pos || (sp === "madden" ? NFL_POS[0] : NBA_POS[0]));
+      const number = resolveNumber(r, sp, pos || (sp === "madden" ? NFL_POS[0] : NBA_POS[0]));
+      const age = draftClass ? resolveAge(r, sp) : (batchAge ?? resolveAge(r, sp));
 
       out.push({
         id: cryptoId(),
         name,
         sport: sp,
-        position: pos,
+        position: pos || (sp === "madden" ? NFL_POS[0] : NBA_POS[0]),
         archetype: size.label,
         heightIn: size.h,
         weightLb: size.w,
@@ -633,48 +674,72 @@ export default function PlayerNameGenerator() {
               Sport/Game {lockBadge(lockSport)}
             </label>
             <div className="flex items-center gap-2">
-              <select className="w-full border rounded px-2 py-2 bg-gray-900" value={sport} onChange={(e)=>setSport(e.target.value as Sport)} disabled={lockSport}>
+              <select className="w-full border rounded px-2 py-2 bg-gray-900" value={sport} onChange={(e)=>setSport(e.target.value as Sport)} disabled={lockSport || draftClass}>
                 <option value="madden">Madden (NFL)</option>
                 <option value="nba2k">NBA 2K</option>
               </select>
               <label className="text-xs flex items-center gap-1">
-                <input type="checkbox" checked={lockSport} onChange={e=>setLockSport(e.target.checked)} /> Lock
+                <input type="checkbox" checked={lockSport} onChange={e=>setLockSport(e.target.checked)} disabled={draftClass}/> Lock
               </label>
             </div>
           </div>
 
-          {/* Position + lock */}
+          {/* Position + lock (disabled in draft mode) */}
           <div className="space-y-2">
             <label className="block text-sm font-medium">
-              Position {lockBadge(lockPosition)}
+              Position {draftClass ? <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-blue-500 text-blue-400">Draft Class controls mix</span> : lockBadge(lockPosition)}
             </label>
             <div className="flex items-center gap-2">
-              <select className="w-full border rounded px-2 py-2 bg-gray-900" value={position} onChange={(e)=>setPosition(e.target.value)} disabled={lockPosition}>
+              <select className="w-full border rounded px-2 py-2 bg-gray-900" value={position} onChange={(e)=>setPosition(e.target.value)} disabled={lockPosition || draftClass}>
                 <option value="">Random</option>
                 {(sport==="madden"?NFL_POS:NBA_POS).map(p => <option key={p} value={p}>{p}</option>)}
               </select>
               <label className="text-xs flex items-center gap-1">
-                <input type="checkbox" checked={lockPosition} onChange={e=>setLockPosition(e.target.checked)} /> Lock
+                <input type="checkbox" checked={lockPosition} onChange={e=>setLockPosition(e.target.checked)} disabled={draftClass}/> Lock
               </label>
             </div>
           </div>
 
-          {/* Quantity */}
+          {/* Quantity + Draft Class toggle */}
           <div className="space-y-2">
-            <label className="block text-sm font-medium">Quantity</label>
-            <input type="number" min={1} max={200} className="w-28 border rounded px-2 py-2 bg-gray-900" value={quantity} onChange={e=>setQuantity(Math.max(1, Math.min(200, Number(e.target.value)||1)))} />
+            <label className="block text-sm font-medium">Quantity & Draft</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min={1}
+                max={200}
+                className="w-28 border rounded px-2 py-2 bg-gray-900 disabled:opacity-50"
+                value={quantity}
+                onChange={e=>setQuantity(Math.max(1, Math.min(200, Number(e.target.value)||1)))}
+                disabled={draftClass}
+              />
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={draftClass} onChange={e=>setDraftClass(e.target.checked)} />
+                Complete Draft Class ({sport==="nba2k" ? "60 players" : "224 players"})
+              </label>
+            </div>
+            {draftClass && (
+              <p className="text-xs text-gray-400">
+                Rookie ages auto‑set ({sport==="nba2k" ? "18–23" : "21–24"}). Position mix is pre‑balanced.
+              </p>
+            )}
           </div>
 
-          {/* Age (sport-specific) */}
+          {/* Age (disabled in draft mode) */}
           <div className="space-y-2">
             <label className="block text-sm font-medium">
-              Age (NBA 18–38, Madden 20–40) {lockBadge(lockAge)}
+              Age {draftClass ? <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-blue-500 text-blue-400">Rookie range</span> : lockBadge(lockAge)}
             </label>
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={useRandomAge} onChange={e=>setUseRandomAge(e.target.checked)} disabled={lockAge}/>
+              <input
+                type="checkbox"
+                checked={useRandomAge}
+                onChange={e=>setUseRandomAge(e.target.checked)}
+                disabled={draftClass || lockAge}
+              />
               Use Random Age
             </label>
-            {!useRandomAge && (
+            {!useRandomAge && !draftClass && (
               <div className="flex items-center gap-2 mt-2">
                 <input
                   type="number"
@@ -697,7 +762,7 @@ export default function PlayerNameGenerator() {
                 </label>
               </div>
             )}
-            {useRandomAge && (
+            {useRandomAge && !draftClass && (
               <div className="mt-2">
                 <label className="text-xs flex items-center gap-1">
                   <input type="checkbox" checked={lockAge} onChange={e=>setLockAge(e.target.checked)} /> Lock random age (pick once per batch)
@@ -712,7 +777,13 @@ export default function PlayerNameGenerator() {
               Jersey Number (blank = Random) {lockBadge(lockNumber)}
             </label>
             <div className="flex items-center gap-2">
-              <input className="w-full border rounded px-2 py-2 bg-gray-900" placeholder={sport==="nba2k"?"0–99":"varies by NFL position"} value={manualNumber} onChange={e=>setManualNumber(e.target.value)} disabled={lockNumber && manualNumber.trim()!==""}/>
+              <input
+                className="w-full border rounded px-2 py-2 bg-gray-900"
+                placeholder={sport==="nba2k"?"0–99":"varies by NFL position"}
+                value={manualNumber}
+                onChange={e=>setManualNumber(e.target.value)}
+                disabled={lockNumber && manualNumber.trim()!==""}
+              />
               <label className="text-xs flex items-center gap-1">
                 <input type="checkbox" checked={lockNumber} onChange={e=>setLockNumber(e.target.checked)} /> Lock
               </label>
