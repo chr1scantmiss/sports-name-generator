@@ -7,6 +7,7 @@ import React, { useMemo, useState, useEffect } from "react";
  * - Never exceed K/P caps; gentle balancing; RB >= TE when possible
  * - Clear-before-generate toggle + last-batch position breakdown
  * - Ethnicity-aware names by country; NA pool for colleges
+ * - USNG logo added in header and left of "Sport/Game"
  */
 
 type Sport = "madden" | "nba2k";
@@ -27,7 +28,7 @@ type PlayerRow = {
   collegeOrCountry: string;
 };
 
-const STORAGE_KEY = "sgnc_players_v16";
+const STORAGE_KEY = "sgnc_players_v17";
 
 /* ==============================
    Countries — Europe + South America (A–Z), USA excluded
@@ -305,7 +306,7 @@ function ageBoundsForSport(sp: Sport): {min:number; max:number} {
   return sp === "nba2k" ? { min: 18, max: 38 } : { min: 20, max: 40 };
 }
 function rookieAgeBoundsForSport(sp: Sport): {min:number; max:number} {
-  return sp === "nba2k" ? { min: 18, max: 23 } : { min: 21, max: 24 }; // rookie ranges
+  return sp === "nba2k" ? { min: 18, max: 23 } : { min: 21, max: 24 };
 }
 function randomIn(min: number, max: number, r: () => number) {
   return Math.round(min + (max - min) * r());
@@ -371,9 +372,9 @@ export default function PlayerNameGenerator() {
   const [position, setPosition] = useState<string>(""); // "" = Random
   const [lockPosition, setLockPosition] = useState(false);
 
-  const [quantity, setQuantity] = useState<number>(1); // default = 1
-  const [draftClass, setDraftClass] = useState<boolean>(false); // Complete Draft Class
-  const [clearBefore, setClearBefore] = useState<boolean>(false); // patch
+  const [quantity, setQuantity] = useState<number>(1);
+  const [draftClass, setDraftClass] = useState<boolean>(false);
+  const [clearBefore, setClearBefore] = useState<boolean>(false);
 
   // Age controls
   const [useRandomAge, setUseRandomAge] = useState<boolean>(true);
@@ -537,7 +538,7 @@ export default function PlayerNameGenerator() {
     return list;
   }
 
-  // ===== NEW: Madden ranges from your spec =====
+  // Your Madden ranges
   const NFL_RANGE_MIN: Record<string, number> = {
     OL: 39, DL: 39, WR: 27, CB: 27, LB: 25, S: 22, RB: 9, TE: 7, QB: 9, K: 2, P: 2
   };
@@ -553,12 +554,12 @@ export default function PlayerNameGenerator() {
     const posOrder = ["OL","DL","WR","CB","LB","S","RB","TE","QB","K","P"] as const;
     const counts: Record<string, number> = {} as any;
 
-    // 1) Start with a random pick within each range
+    // 1) Random pick within each range
     for (const p of posOrder) {
       counts[p] = randInt(NFL_RANGE_MIN[p], NFL_RANGE_MAX[p]);
     }
 
-    // 2) Prefer RB >= TE (if both can move within ranges)
+    // 2) Prefer RB >= TE if possible
     if (counts.RB < counts.TE) {
       const diff = counts.TE - counts.RB;
       const roomUpRB = NFL_RANGE_MAX.RB - counts.RB;
@@ -573,73 +574,35 @@ export default function PlayerNameGenerator() {
     // 3) Balance to exactly 224 total
     const target = 224;
     let sum = Object.values(counts).reduce((a, b) => a + b, 0);
-
-    // Adjustment preference:
-    // - When removing: take from bigger pools first (OL, DL, WR, CB, LB, S, RB, TE, QB) — never push below min
-    // - When adding: add to core pools first (OL, DL, WR, CB, LB, S, RB, TE, QB) — avoid K/P unless necessary
     const removePref = ["OL","DL","WR","CB","LB","S","RB","TE","QB","K","P"];
     const addPref    = ["OL","DL","WR","CB","LB","S","RB","TE","QB","K","P"];
 
-    let guard = 10000; // safety loop guard
+    let guard = 10000;
     while (sum !== target && guard-- > 0) {
       if (sum > target) {
-        // Need to remove 1 somewhere with room above min
         let changed = false;
         for (const p of removePref) {
           const next = counts[p] - 1;
           if (next >= NFL_RANGE_MIN[p]) {
-            // Keep RB >= TE if possible
             if (p === "RB" && next < counts.TE) continue;
-            counts[p] = next;
-            sum--;
-            changed = true;
-            break;
+            counts[p] = next; sum--; changed = true; break;
           }
         }
-        if (!changed) break; // can't adjust further within ranges
+        if (!changed) break;
       } else {
-        // sum < target — need to add 1 somewhere with room below max
         let changed = false;
         for (const p of addPref) {
           const next = counts[p] + 1;
           if (next <= NFL_RANGE_MAX[p]) {
-            // Keep RB >= TE if increasing TE
             if (p === "TE" && counts.RB < next) continue;
-            counts[p] = next;
-            sum++;
-            changed = true;
-            break;
+            counts[p] = next; sum++; changed = true; break;
           }
         }
         if (!changed) break;
       }
     }
 
-    // 4) Final RB >= TE touch-up if still violated and we can swap within ranges
-    if (counts.RB < counts.TE) {
-      const need = counts.TE - counts.RB;
-      // Try to move from TE -> RB directly
-      const canDownTE = counts.TE - NFL_RANGE_MIN.TE;
-      const canUpRB = NFL_RANGE_MAX.RB - counts.RB;
-      const move = Math.min(need, canDownTE, canUpRB);
-      counts.TE -= move;
-      counts.RB += move;
-
-      // If total changed (it shouldn't), re-balance minimally
-      let s2 = Object.values(counts).reduce((a,b)=>a+b,0);
-      while (s2 > target) {
-        for (const p of removePref) {
-          if (counts[p] > NFL_RANGE_MIN[p]) { counts[p]--; s2--; break; }
-        }
-      }
-      while (s2 < target) {
-        for (const p of addPref) {
-          if (counts[p] < NFL_RANGE_MAX[p]) { counts[p]++; s2++; break; }
-        }
-      }
-    }
-
-    // 5) Build the list from counts and shuffle
+    // 4) Build list & shuffle
     const list: string[] = [];
     for (const [pos, c] of Object.entries(counts)) {
       for (let i = 0; i < c; i++) list.push(pos);
@@ -754,11 +717,18 @@ export default function PlayerNameGenerator() {
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-8 space-y-6 text-white">
-      {/* Header */}
+      {/* Header with logo */}
       <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Sports Player Name Generator</h1>
-          <p className="text-sm text-gray-400">Choose/lock values, then generate. Names are unique across the whole save.</p>
+        <div className="flex items-center gap-3">
+          <img src="/logo.png" alt="USNG Logo" className="w-8 h-8 object-contain rounded" />
+          <div>
+            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">
+              Sports Player Name Generator
+            </h1>
+            <p className="text-sm text-gray-400">
+              Choose/lock values, then generate. Names are unique across the whole save.
+            </p>
+          </div>
         </div>
         <div className="flex gap-2">
           <button className="border rounded px-3 py-2" onClick={copyList}>Copy</button>
@@ -773,10 +743,14 @@ export default function PlayerNameGenerator() {
         </div>
 
         <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Sport/Game + lock */}
+          {/* Sport/Game + lock with logo to the left */}
           <div className="space-y-2">
             <label className="block text-sm font-medium">
-              Sport/Game {lockBadge(lockSport)}
+              <span className="inline-flex items-center gap-2">
+                <img src="/logo.png" alt="USNG Logo" className="w-5 h-5 object-contain rounded" />
+                <span>Sport/Game</span>
+              </span>
+              {lockBadge(lockSport)}
             </label>
             <div className="flex items-center gap-2">
               <select className="w-full border rounded px-2 py-2 bg-gray-900" value={sport} onChange={(e)=>setSport(e.target.value as Sport)} disabled={lockSport || draftClass}>
@@ -789,7 +763,7 @@ export default function PlayerNameGenerator() {
             </div>
           </div>
 
-          {/* Position + lock (disabled in draft mode) */}
+          {/* Position + lock */}
           <div className="space-y-2">
             <label className="block text-sm font-medium">
               Position {draftClass ? <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-blue-500 text-blue-400">Draft Class controls mix</span> : lockBadge(lockPosition)}
@@ -829,12 +803,12 @@ export default function PlayerNameGenerator() {
             </div>
             {draftClass && (
               <p className="text-xs text-gray-400">
-                Rookie ages auto‑set ({sport==="nba2k" ? "18–23" : "21–24"}). Position mix is pre‑balanced by ranges.
+                Rookie ages auto‑set ({sport==="nba2k" ? "18–23" : "21–24"}). Position mix uses your ranges.
               </p>
             )}
           </div>
 
-          {/* Age (disabled in draft mode) */}
+          {/* Age */}
           <div className="space-y-2">
             <label className="block text-sm font-medium">
               Age {draftClass ? <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-blue-500 text-blue-400">Rookie range locked</span> : lockBadge(lockAge)}
@@ -880,7 +854,7 @@ export default function PlayerNameGenerator() {
             )}
           </div>
 
-          {/* Jersey # + lock */}
+          {/* Jersey # */}
           <div className="space-y-2">
             <label className="block text-sm font-medium">
               Jersey Number (blank = Random) {lockBadge(lockNumber)}
@@ -899,12 +873,12 @@ export default function PlayerNameGenerator() {
             </div>
             {sport==="madden" && (
               <p className="text-xs text-gray-500 mt-1">
-                NFL examples — QB: 0–19, RB: 0–44, WR: 0–19 or 80–89, TE: 40–49/80–89, OL: 50–79, DL: 50–79/90–99, LB: 0–59/90–99, DB: 0–49, K/P: 0–19.
+                NFL — QB: 0–19, RB: 0–44, WR: 0–19 or 80–89, TE: 40–49/80–89, OL: 50–79, DL: 50–79/90–99, LB: 0–59/90–99, DB: 0–49, K/P: 0–19.
               </p>
             )}
           </div>
 
-          {/* Origin + lock */}
+          {/* Origin */}
           <div className="space-y-2 md:col-span-2">
             <label className="block text-sm font-medium">
               Origin {lockBadge(lockOrigin)}
@@ -947,7 +921,7 @@ export default function PlayerNameGenerator() {
             )}
           </div>
 
-          {/* Size + lock */}
+          {/* Size */}
           <div className="space-y-2">
             <label className="block text-sm font-medium">
               Height & Weight {lockBadge(lockSize)}
