@@ -28,7 +28,7 @@ export const COUNTRIES: string[] = [
   "Dominican Republic",
   "Jamaica",
   "Mexico",
-  "Puerto Rico", // U.S. territory but distinct in NBA/NFL representation
+  "Puerto Rico",
   "Venezuela",
 
   // Asia
@@ -38,7 +38,7 @@ export const COUNTRIES: string[] = [
   "Israel",
   "Japan",
   "South Korea",
-  "Taiwan", // Chinese Taipei
+  "Taiwan",
 
   // Europe
   "Austria",
