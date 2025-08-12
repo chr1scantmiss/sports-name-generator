@@ -1,41 +1,81 @@
-// List of countries with regions so the generator can pick the right names
-export interface Country {
-  name: string;
-  region: "North America" | "Europe" | "Asia" | "Africa" | "South America" | "Oceania";
-}
+// Countries that have produced at least one NBA or NFL player (USA excluded).
+// Alphabetical for nicer UX.
+export const COUNTRIES: string[] = [
+  // Africa
+  "Angola",
+  "Cameroon",
+  "Central African Republic",
+  "Côte d’Ivoire",
+  "Egypt",
+  "Gabon",
+  "Ghana",
+  "Liberia",
+  "Mali",
+  "Nigeria",
+  "Senegal",
+  "South Africa",
+  "South Sudan",
+  "Sudan",
+  "Tunisia",
+  "Zimbabwe",
 
-export const COUNTRIES: Country[] = [
-  // North America
-  { name: "United States", region: "North America" },
-  { name: "Canada", region: "North America" },
-
-  // Europe
-  { name: "France", region: "Europe" },
-  { name: "Spain", region: "Europe" },
-  { name: "Germany", region: "Europe" },
-  { name: "Italy", region: "Europe" },
-  { name: "Russia", region: "Europe" },
+  // Americas (non‑USA)
+  "Argentina",
+  "Bahamas",
+  "Brazil",
+  "Canada",
+  "Cuba",
+  "Dominican Republic",
+  "Jamaica",
+  "Mexico",
+  "Puerto Rico", // U.S. territory but distinct in NBA/NFL representation
+  "Venezuela",
 
   // Asia
-  { name: "Japan", region: "Asia" },
-  { name: "China", region: "Asia" },
+  "China",
+  "India",
+  "Iran",
+  "Israel",
+  "Japan",
+  "South Korea",
+  "Taiwan", // Chinese Taipei
 
-  // Africa
-  { name: "Nigeria", region: "Africa" },
-
-  // South America
-  { name: "Brazil", region: "South America" },
+  // Europe
+  "Austria",
+  "Belgium",
+  "Bosnia and Herzegovina",
+  "Bulgaria",
+  "Croatia",
+  "Czechia",
+  "Denmark",
+  "Estonia",
+  "Finland",
+  "France",
+  "Georgia",
+  "Germany",
+  "Greece",
+  "Hungary",
+  "Ireland",
+  "Italy",
+  "Latvia",
+  "Lithuania",
+  "Montenegro",
+  "Netherlands",
+  "North Macedonia",
+  "Norway",
+  "Poland",
+  "Romania",
+  "Russia",
+  "Serbia",
+  "Slovenia",
+  "Spain",
+  "Sweden",
+  "Switzerland",
+  "Turkey",
+  "Ukraine",
+  "United Kingdom",
 
   // Oceania
-  { name: "Australia", region: "Oceania" }
-];
-
-// Helper to get all countries in a region
-export const getCountriesByRegion = (region: Country["region"]) => {
-  return COUNTRIES.filter(country => country.region === region);
-};
-
-// Helper to get a random country
-export const getRandomCountry = () => {
-  return COUNTRIES[Math.floor(Math.random() * COUNTRIES.length)];
-};
+  "Australia",
+  "New Zealand",
+].sort((a, b) => a.localeCompare(b));
