@@ -1,5 +1,5 @@
 // NCAA Division I schools (alphabetical)
-export const NCAA_ALL_DI: string[] = [
+export const COLLEGES: string[] = [
   "Abilene Christian","Air Force","Akron","Alabama","Alabama A&M","Alabama State","Albany","Alcorn State",
   "American","Appalachian State","Arizona","Arizona State","Arkansas","Arkansas State","Arkansas–Pine Bluff",
   "Army West Point","Auburn","Austin Peay",
